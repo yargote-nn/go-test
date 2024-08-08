@@ -20,8 +20,11 @@ export default function Register() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ username, password }),
 			});
-			const data = await response.json();
+
 			if (response.ok) {
+				const data = await response.json();
+				const { userId, privateKey } = data;
+				localStorage.setItem(`privateKey-${userId}`, privateKey);
 				toast({
 					title: "Registration successful",
 					description: "Please login with your new account",
@@ -30,14 +33,14 @@ export default function Register() {
 			} else {
 				toast({
 					title: "Registration failed",
-					description: data.error || "Registration failed",
+					description: "Please try again",
 					variant: "destructive",
 				});
 			}
 		} catch (error) {
 			toast({
 				title: "Registration failed",
-				description: JSON.stringify(error),
+				description: "Please try again",
 				variant: "destructive",
 			});
 		}

@@ -2,11 +2,15 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -42,9 +46,15 @@ type WSMessage struct {
 	SenderID   uint   `json:"sender_id"`
 	ReceiverID uint   `json:"receiver_id"`
 	Content    string `json:"content"`
-	AESKey     string `json:"aes_key"`
+	AESKey     string `json:"aes_key,omitempty"`
 	MessageID  uint   `json:"message_id,omitempty"`
 	Status     string `json:"status,omitempty"`
+}
+
+type UserResponse struct {
+	ID        uint   `json:"id"`
+	Username  string `json:"username"`
+	PublicKey string `json:"public_key"`
 }
 
 type User struct {
@@ -58,10 +68,20 @@ type Message struct {
 	gorm.Model
 	SenderID   uint
 	ReceiverID uint
-	Content    string // Encrypted content
-	Status     string // sent, received, read
+	Content    []byte // Store encrypted content as binary data
+	Status     string
 	ExpiresAt  time.Time
-	AESKey     string // Encrypted AES key
+	AESKey     []byte // Store encrypted AES key as binary data
+}
+
+type MessageResponse struct {
+	ID         uint   `json:"id"`
+	SenderID   uint   `json:"sender_id"`
+	ReceiverID uint   `json:"receiver_id"`
+	Content    string `json:"content"`
+	Status     string `json:"status"`
+	ExpiresAt  string `json:"expires_at"`
+	AESKey     string `json:"aes_key"`
 }
 
 func main() {
@@ -112,6 +132,7 @@ func main() {
 	// Protected routes
 	api.Use(jwtMiddleware)
 	api.Get("/messages", getMessagesHandler)
+	api.Get("/users/:id", getUserHandler)
 
 	// Add middleware
 	app.Use(logger.New())  // Adds logging
@@ -123,6 +144,23 @@ func main() {
 
 	// Start server
 	log.Fatal(app.Listen(":8080"))
+}
+
+func getUserHandler(c *fiber.Ctx) error {
+	userID := c.Params("id")
+	log.Println("User ID:", userID)
+	var user User
+	if err := db.Where("id = ?", userID).First(&user).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
+	}
+	log.Println("User:", user)
+	// Map user to UserResponse
+	userResponse := UserResponse{
+		ID:        user.ID,
+		Username:  user.Username,
+		PublicKey: user.PublicKey,
+	}
+	return c.JSON(fiber.Map{"user": userResponse})
 }
 
 func setupWebSocket(app *fiber.App) {
@@ -164,7 +202,7 @@ func registerHandler(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not create user"})
 	}
 
-	return c.JSON(fiber.Map{"message": "User registered successfully", "privateKey": privateKey})
+	return c.JSON(fiber.Map{"user_id": user.ID, "privateKey": privateKey})
 }
 
 func loginHandler(c *fiber.Ctx) error {
@@ -233,14 +271,16 @@ func getMessagesHandler(c *fiber.Ctx) error {
 	log.Printf("Messages: %+v", messages)
 
 	// Prepare response
-	var responseMessages []map[string]interface{}
+	var responseMessages []MessageResponse
 	for _, msg := range messages {
-		responseMsg := map[string]interface{}{
-			"id":         msg.ID,
-			"sender_id":  msg.SenderID,
-			"content":    msg.Content, // Note: This is still encrypted
-			"status":     msg.Status,
-			"created_at": msg.CreatedAt,
+		responseMsg := MessageResponse{
+			ID:         msg.ID,
+			SenderID:   msg.SenderID,
+			ReceiverID: msg.ReceiverID,
+			Content:    string(msg.Content), // Note: This is still encrypted
+			Status:     msg.Status,
+			ExpiresAt:  msg.ExpiresAt.Local().Format("2006-01-02 15:04:05"),
+			AESKey:     string(msg.AESKey),
 		}
 		responseMessages = append(responseMessages, responseMsg)
 	}
@@ -315,18 +355,18 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	log.Println("Receiver ID:", msg.ReceiverID)
 	log.Println("Content:", msg.Content)
 	log.Println("AES key:", msg.AESKey)
-	// encryptedContent, encryptedAESKey, err := encryptMessage(msg.Content, msg.AESKey)
-	// if err != nil {
-	// 	log.Println("Error encrypting message:", err)
-	// 	return
-	// }
+	encryptedContent, encryptedAESKey, err := encryptMessage(msg.Content, msg.AESKey)
+	if err != nil {
+		log.Println("Error encrypting message:", err)
+		return
+	}
 
 	// Save the message to the database
 	message := Message{
 		SenderID:   senderID,
 		ReceiverID: msg.ReceiverID,
-		Content:    msg.Content,
-		AESKey:     msg.AESKey,
+		Content:    []byte(encryptedContent),
+		AESKey:     []byte(encryptedAESKey),
 		Status:     "sent",
 		ExpiresAt:  time.Now().Add(24 * time.Hour), // Set message expiration (e.g., 24 hours)
 	}
@@ -342,8 +382,8 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			Type:       "new_message",
 			SenderID:   senderID,
 			ReceiverID: msg.ReceiverID,
-			Content:    msg.Content,
-			AESKey:     msg.AESKey,
+			Content:    encryptedContent,
+			AESKey:     encryptedAESKey,
 			MessageID:  message.ID,
 		}
 		err := conn.WriteJSON(outMsg)
@@ -454,82 +494,82 @@ func generateKeyPair() (string, string, error) {
 	return string(publicKeyPEM), string(privateKeyPEM), nil
 }
 
-// func encryptMessage(message string, publicKey string) (string, string, error) {
-// 	block, _ := pem.Decode([]byte(publicKey))
-// 	if block == nil {
-// 		return "", "", errors.New("failed to parse PEM block containing the public key")
-// 	}
+func encryptMessage(message string, publicKey string) (string, string, error) {
+	block, _ := pem.Decode([]byte(publicKey))
+	if block == nil {
+		return "", "", errors.New("failed to parse PEM block containing the public key")
+	}
 
-// 	pub, err := x509.ParsePKCS1PublicKey(block.Bytes)
-// 	if err != nil {
-// 		return "", "", err
-// 	}
+	pub, err := x509.ParsePKCS1PublicKey(block.Bytes)
+	if err != nil {
+		return "", "", err
+	}
 
-// 	// Generate AES key
-// 	aesKey := make([]byte, 32)
-// 	if _, err := io.ReadFull(rand.Reader, aesKey); err != nil {
-// 		return "", "", err
-// 	}
+	// Generate AES key
+	aesKey := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, aesKey); err != nil {
+		return "", "", err
+	}
 
-// 	// Encrypt AES key with RSA public key
-// 	encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, pub, aesKey)
-// 	if err != nil {
-// 		return "", "", err
-// 	}
+	// Encrypt AES key with RSA public key
+	encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, pub, aesKey)
+	if err != nil {
+		return "", "", err
+	}
 
-// 	// Encrypt message with AES key
-// 	cipherBlock, err := aes.NewCipher(aesKey)
-// 	if err != nil {
-// 		return "", "", err
-// 	}
+	// Encrypt message with AES key
+	cipherBlock, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return "", "", err
+	}
 
-// 	ciphertext := make([]byte, aes.BlockSize+len(message))
-// 	iv := ciphertext[:aes.BlockSize]
-// 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-// 		return "", "", err
-// 	}
+	ciphertext := make([]byte, aes.BlockSize+len(message))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return "", "", err
+	}
 
-// 	stream := cipher.NewCFBEncrypter(cipherBlock, iv)
-// 	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(message))
+	stream := cipher.NewCFBEncrypter(cipherBlock, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(message))
 
-// 	return string(ciphertext), string(encryptedAESKey), nil
-// }
+	return string(ciphertext), string(encryptedAESKey), nil
+}
 
-// func decryptMessage(encryptedMessage string, encryptedAESKey string, privateKey string) (string, error) {
-// 	block, _ := pem.Decode([]byte(privateKey))
-// 	if block == nil {
-// 		return "", errors.New("failed to parse PEM block containing the private key")
-// 	}
+func decryptMessage(encryptedMessage string, encryptedAESKey string, privateKey string) (string, error) {
+	block, _ := pem.Decode([]byte(privateKey))
+	if block == nil {
+		return "", errors.New("failed to parse PEM block containing the private key")
+	}
 
-// 	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-// 	if err != nil {
-// 		return "", err
-// 	}
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return "", err
+	}
 
-// 	// Decrypt AES key
-// 	aesKey, err := rsa.DecryptPKCS1v15(rand.Reader, priv, []byte(encryptedAESKey))
-// 	if err != nil {
-// 		return "", err
-// 	}
+	// Decrypt AES key
+	aesKey, err := rsa.DecryptPKCS1v15(rand.Reader, priv, []byte(encryptedAESKey))
+	if err != nil {
+		return "", err
+	}
 
-// 	// Decrypt message
-// 	cipherBlock, err := aes.NewCipher(aesKey)
-// 	if err != nil {
-// 		return "", err
-// 	}
+	// Decrypt message
+	cipherBlock, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return "", err
+	}
 
-// 	ciphertext := []byte(encryptedMessage)
-// 	if len(ciphertext) < aes.BlockSize {
-// 		return "", errors.New("ciphertext too short")
-// 	}
-// 	iv := ciphertext[:aes.BlockSize]
-// 	ciphertext = ciphertext[aes.BlockSize:]
+	ciphertext := []byte(encryptedMessage)
+	if len(ciphertext) < aes.BlockSize {
+		return "", errors.New("ciphertext too short")
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
 
-// 	stream := cipher.NewCFBDecrypter(cipherBlock, iv)
-// 	stream.XORKeyStream(ciphertext, ciphertext)
+	stream := cipher.NewCFBDecrypter(cipherBlock, iv)
+	stream.XORKeyStream(ciphertext, ciphertext)
 
-// 	return string(ciphertext), nil
-// }
+	return string(ciphertext), nil
+}
 
 func setupCronJobs() {
 	c := cron.New()
