@@ -30,6 +30,8 @@ services:
     networks:
       - postgres
     restart: unless-stopped
+    logging:
+      driver: "none"
 
   app:
     build:

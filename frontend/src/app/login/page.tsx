@@ -6,6 +6,19 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { z } from "zod";
+
+const loginDataSchema = z.object({
+	user_id: z.number(),
+	username: z.string(),
+	token: z.string(),
+});
+
+interface LoginData {
+	user_id: number;
+	username: string;
+	token: string;
+}
 
 export default function Login() {
 	const [username, setUsername] = useState("");
@@ -21,16 +34,25 @@ export default function Login() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ username, password }),
 			});
-			const data = await response.json();
-			if (response.ok) {
+			console.log(response);
+			const jsonData = await response.json();
+			console.log(jsonData);
+			const { data, success } = loginDataSchema.safeParse(jsonData);
+			if (response.ok && success) {
 				localStorage.setItem("token", data.token);
+				localStorage.setItem("user_id", data.user_id.toString());
+				localStorage.setItem("username", data.username);
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",
 				});
 				router.push("/chat");
 			} else {
-				throw new Error(data.error || "Login failed");
+				toast({
+					title: "Login failed",
+					description: "Invalid credentials",
+					variant: "destructive",
+				});
 			}
 		} catch (error) {
 			toast({

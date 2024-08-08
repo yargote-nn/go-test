@@ -2,15 +2,11 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strconv"
@@ -200,7 +196,11 @@ func loginHandler(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not login"})
 	}
 
-	return c.JSON(fiber.Map{"token": t})
+	return c.JSON(fiber.Map{
+		"user_id":  user.ID,
+		"username": user.Username,
+		"token":    t,
+	})
 }
 
 func getMessagesHandler(c *fiber.Ctx) error {
@@ -218,6 +218,7 @@ func getMessagesHandler(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid partner_id"})
 	}
+	log.Println("Partner ID:", partnerID)
 
 	var messages []Message
 	if err := db.Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
@@ -227,6 +228,9 @@ func getMessagesHandler(c *fiber.Ctx) error {
 		Find(&messages).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not retrieve messages"})
 	}
+	log.Println("Messages retrieved successfully")
+
+	log.Printf("Messages: %+v", messages)
 
 	// Prepare response
 	var responseMessages []map[string]interface{}
@@ -306,18 +310,23 @@ func websocketHandler(c *websocket.Conn) {
 
 func handleNewMessage(senderID uint, msg *WSMessage) {
 	// Encrypt the message content and AES key
-	encryptedContent, encryptedAESKey, err := encryptMessage(msg.Content, msg.AESKey)
-	if err != nil {
-		log.Println("Error encrypting message:", err)
-		return
-	}
+	log.Println("Encrypting message...")
+	log.Println("Sender ID:", senderID)
+	log.Println("Receiver ID:", msg.ReceiverID)
+	log.Println("Content:", msg.Content)
+	log.Println("AES key:", msg.AESKey)
+	// encryptedContent, encryptedAESKey, err := encryptMessage(msg.Content, msg.AESKey)
+	// if err != nil {
+	// 	log.Println("Error encrypting message:", err)
+	// 	return
+	// }
 
 	// Save the message to the database
 	message := Message{
 		SenderID:   senderID,
 		ReceiverID: msg.ReceiverID,
-		Content:    encryptedContent,
-		AESKey:     encryptedAESKey,
+		Content:    msg.Content,
+		AESKey:     msg.AESKey,
 		Status:     "sent",
 		ExpiresAt:  time.Now().Add(24 * time.Hour), // Set message expiration (e.g., 24 hours)
 	}
@@ -333,8 +342,8 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			Type:       "new_message",
 			SenderID:   senderID,
 			ReceiverID: msg.ReceiverID,
-			Content:    encryptedContent,
-			AESKey:     encryptedAESKey,
+			Content:    msg.Content,
+			AESKey:     msg.AESKey,
 			MessageID:  message.ID,
 		}
 		err := conn.WriteJSON(outMsg)
@@ -445,46 +454,46 @@ func generateKeyPair() (string, string, error) {
 	return string(publicKeyPEM), string(privateKeyPEM), nil
 }
 
-func encryptMessage(message string, publicKey string) (string, string, error) {
-	block, _ := pem.Decode([]byte(publicKey))
-	if block == nil {
-		return "", "", errors.New("failed to parse PEM block containing the public key")
-	}
+// func encryptMessage(message string, publicKey string) (string, string, error) {
+// 	block, _ := pem.Decode([]byte(publicKey))
+// 	if block == nil {
+// 		return "", "", errors.New("failed to parse PEM block containing the public key")
+// 	}
 
-	pub, err := x509.ParsePKCS1PublicKey(block.Bytes)
-	if err != nil {
-		return "", "", err
-	}
+// 	pub, err := x509.ParsePKCS1PublicKey(block.Bytes)
+// 	if err != nil {
+// 		return "", "", err
+// 	}
 
-	// Generate AES key
-	aesKey := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, aesKey); err != nil {
-		return "", "", err
-	}
+// 	// Generate AES key
+// 	aesKey := make([]byte, 32)
+// 	if _, err := io.ReadFull(rand.Reader, aesKey); err != nil {
+// 		return "", "", err
+// 	}
 
-	// Encrypt AES key with RSA public key
-	encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, pub, aesKey)
-	if err != nil {
-		return "", "", err
-	}
+// 	// Encrypt AES key with RSA public key
+// 	encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, pub, aesKey)
+// 	if err != nil {
+// 		return "", "", err
+// 	}
 
-	// Encrypt message with AES key
-	cipherBlock, err := aes.NewCipher(aesKey)
-	if err != nil {
-		return "", "", err
-	}
+// 	// Encrypt message with AES key
+// 	cipherBlock, err := aes.NewCipher(aesKey)
+// 	if err != nil {
+// 		return "", "", err
+// 	}
 
-	ciphertext := make([]byte, aes.BlockSize+len(message))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", "", err
-	}
+// 	ciphertext := make([]byte, aes.BlockSize+len(message))
+// 	iv := ciphertext[:aes.BlockSize]
+// 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+// 		return "", "", err
+// 	}
 
-	stream := cipher.NewCFBEncrypter(cipherBlock, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(message))
+// 	stream := cipher.NewCFBEncrypter(cipherBlock, iv)
+// 	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(message))
 
-	return string(ciphertext), string(encryptedAESKey), nil
-}
+// 	return string(ciphertext), string(encryptedAESKey), nil
+// }
 
 // func decryptMessage(encryptedMessage string, encryptedAESKey string, privateKey string) (string, error) {
 // 	block, _ := pem.Decode([]byte(privateKey))

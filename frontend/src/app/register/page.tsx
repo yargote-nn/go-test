@@ -28,7 +28,11 @@ export default function Register() {
 				});
 				router.push("/login");
 			} else {
-				throw new Error(data.error || "Registration failed");
+				toast({
+					title: "Registration failed",
+					description: data.error || "Registration failed",
+					variant: "destructive",
+				});
 			}
 		} catch (error) {
 			toast({
