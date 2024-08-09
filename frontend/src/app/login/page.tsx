@@ -12,12 +12,14 @@ const loginDataSchema = z.object({
 	user_id: z.number(),
 	username: z.string(),
 	token: z.string(),
+	private_key: z.string(),
 });
 
 interface LoginData {
 	user_id: number;
 	username: string;
 	token: string;
+	private_key: string;
 }
 
 export default function Login() {
@@ -34,30 +36,28 @@ export default function Login() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ username, password }),
 			});
-			console.log(response);
 			const jsonData = await response.json();
-			console.log(jsonData);
 			const { data, success } = loginDataSchema.safeParse(jsonData);
-			if (response.ok && success) {
+			if (success) {
 				localStorage.setItem("token", data.token);
 				localStorage.setItem("user_id", data.user_id.toString());
 				localStorage.setItem("username", data.username);
+				localStorage.setItem("privateKey", data.private_key);
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",
 				});
 				router.push("/chat");
-			} else {
-				toast({
-					title: "Login failed",
-					description: "Invalid credentials",
-					variant: "destructive",
-				});
+				return;
 			}
-		} catch (error) {
 			toast({
 				title: "Login failed",
-				description: JSON.stringify(error),
+				description: "Invalid credentials",
+			});
+		} catch (error) {
+			console.error(error);
+			toast({
+				title: "Login failed",
 				variant: "destructive",
 			});
 		}

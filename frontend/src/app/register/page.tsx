@@ -3,8 +3,14 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
+import { generateKeyPair } from "@/lib/crypto";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { z } from "zod";
+
+const RegisterDataSchema = z.object({
+	user_id: z.number(),
+});
 
 export default function Register() {
 	const [username, setUsername] = useState("");
@@ -15,26 +21,48 @@ export default function Register() {
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
+			const { publicKey, privateKey } = await generateKeyPair();
 			const response = await fetch("http://localhost:8080/api/register", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ username, password }),
+				body: JSON.stringify({
+					username,
+					password,
+					public_key: publicKey,
+					private_key: privateKey,
+				}),
 			});
 
 			if (response.ok) {
-				const data = await response.json();
-				const { userId, privateKey } = data;
-				localStorage.setItem(`privateKey-${userId}`, privateKey);
-				toast({
-					title: "Registration successful",
-					description: "Please login with your new account",
-				});
-				router.push("/login");
+				const responseData = await response.json();
+				const { data, success } = RegisterDataSchema.safeParse(responseData);
+				if (success) {
+					const { user_id } = data;
+					console.log(user_id);
+					if (user_id) {
+						toast({
+							title: "Registration successful",
+							description: "Please login with your new account",
+						});
+						router.push("/login");
+						return;
+					}
+					toast({
+						title: "Registration failed",
+						description: "User Not Created",
+						variant: "destructive",
+					});
+				} else {
+					toast({
+						title: "Registration failed",
+						description: "Please try again. Invalid response",
+						variant: "destructive",
+					});
+				}
 			} else {
 				toast({
 					title: "Registration failed",
 					description: "Please try again",
-					variant: "destructive",
 				});
 			}
 		} catch (error) {

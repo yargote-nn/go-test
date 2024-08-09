@@ -49,6 +49,7 @@ type WSMessage struct {
 	AESKey     string `json:"aes_key,omitempty"`
 	MessageID  uint   `json:"message_id,omitempty"`
 	Status     string `json:"status,omitempty"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
 }
 
 type UserResponse struct {
@@ -57,21 +58,29 @@ type UserResponse struct {
 	PublicKey string `json:"public_key"`
 }
 
+type UserRequest struct {
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+}
+
 type User struct {
 	gorm.Model
-	Username  string `gorm:"uniqueIndex"`
-	Password  string // Store hashed password
-	PublicKey string
+	Username   string `gorm:"uniqueIndex"`
+	Password   string // Store hashed password
+	PrivateKey string
+	PublicKey  string
 }
 
 type Message struct {
 	gorm.Model
 	SenderID   uint
 	ReceiverID uint
-	Content    []byte // Store encrypted content as binary data
+	Content    string // Store encrypted content as binary data
 	Status     string
 	ExpiresAt  time.Time
-	AESKey     []byte // Store encrypted AES key as binary data
+	AESKey     string // Store encrypted AES key as binary data
 }
 
 type MessageResponse struct {
@@ -178,31 +187,37 @@ func setupWebSocket(app *fiber.App) {
 }
 
 func registerHandler(c *fiber.Ctx) error {
-	user := new(User)
-	if err := c.BodyParser(user); err != nil {
+	userReq := new(UserRequest)
+	if err := c.BodyParser(userReq); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid input"})
 	}
 
 	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userReq.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not hash password"})
 	}
+
+	user := new(User)
+	user.Username = userReq.Username
 	user.Password = string(hashedPassword)
+	user.PublicKey = userReq.PublicKey
+	user.PrivateKey = userReq.PrivateKey
 
 	// Generate key pair
-	publicKey, privateKey, err := generateKeyPair()
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Could not generate key pair"})
-	}
-	user.PublicKey = publicKey
+	// publicKey, privateKey, err := generateKeyPair()
+	// if err != nil {
+	// 	return c.Status(500).JSON(fiber.Map{"error": "Could not generate key pair"})
+	// }
+	// user.PublicKey = publicKey
+	// user.PrivateKey = privateKey
 
 	// Save user to database
 	if err := db.Create(user).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not create user"})
 	}
 
-	return c.JSON(fiber.Map{"user_id": user.ID, "privateKey": privateKey})
+	return c.JSON(fiber.Map{"user_id": user.ID})
 }
 
 func loginHandler(c *fiber.Ctx) error {
@@ -235,9 +250,10 @@ func loginHandler(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"token":    t,
+		"user_id":     user.ID,
+		"username":    user.Username,
+		"token":       t,
+		"private_key": user.PrivateKey,
 	})
 }
 
@@ -277,10 +293,10 @@ func getMessagesHandler(c *fiber.Ctx) error {
 			ID:         msg.ID,
 			SenderID:   msg.SenderID,
 			ReceiverID: msg.ReceiverID,
-			Content:    string(msg.Content), // Note: This is still encrypted
+			Content:    msg.Content, // Note: This is still encrypted
 			Status:     msg.Status,
 			ExpiresAt:  msg.ExpiresAt.Local().Format("2006-01-02 15:04:05"),
-			AESKey:     string(msg.AESKey),
+			AESKey:     msg.AESKey,
 		}
 		responseMessages = append(responseMessages, responseMsg)
 	}
@@ -355,9 +371,11 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	log.Println("Receiver ID:", msg.ReceiverID)
 	log.Println("Content:", msg.Content)
 	log.Println("AES key:", msg.AESKey)
-	encryptedContent, encryptedAESKey, err := encryptMessage(msg.Content, msg.AESKey)
+	log.Println("Expires at:", msg.ExpiresAt)
+
+	t, err := time.Parse(time.RFC3339, msg.ExpiresAt)
 	if err != nil {
-		log.Println("Error encrypting message:", err)
+		log.Println("Error parsing expires at:", err)
 		return
 	}
 
@@ -365,10 +383,10 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	message := Message{
 		SenderID:   senderID,
 		ReceiverID: msg.ReceiverID,
-		Content:    []byte(encryptedContent),
-		AESKey:     []byte(encryptedAESKey),
+		Content:    msg.Content,
+		AESKey:     msg.AESKey,
 		Status:     "sent",
-		ExpiresAt:  time.Now().Add(24 * time.Hour), // Set message expiration (e.g., 24 hours)
+		ExpiresAt:  t, // Set message expiration (e.g., 24 hours)
 	}
 	if err := db.Create(&message).Error; err != nil {
 		log.Println("Error saving message:", err)
@@ -382,8 +400,8 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			Type:       "new_message",
 			SenderID:   senderID,
 			ReceiverID: msg.ReceiverID,
-			Content:    encryptedContent,
-			AESKey:     encryptedAESKey,
+			Content:    msg.Content,
+			AESKey:     msg.AESKey,
 			MessageID:  message.ID,
 		}
 		err := conn.WriteJSON(outMsg)
