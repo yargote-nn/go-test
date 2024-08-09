@@ -54,6 +54,11 @@ export default function Chat() {
 	const [userId, setUserId] = useState("");
 	const [newMessage, setNewMessage] = useState("");
 	const [token, setToken] = useState("");
+	const [encryptedData, setEncryptedData] = useState({
+		encryptedMessage: "",
+		encryptedAESKey: "",
+	});
+	const [decryptedMessage, setDecryptedMessage] = useState("");
 	const [ws, setWs] = useState<WebSocket | null>(null);
 	const [privateKey, setPrivateKey] = useState("");
 	const router = useRouter();
@@ -128,6 +133,7 @@ export default function Chat() {
 					});
 				}
 			} catch (error) {
+				console.error("Error fetching partner info:", error);
 				toast({
 					title: "Error",
 					description: "Please try again. Failed to fetch partner info",
@@ -153,6 +159,11 @@ export default function Chat() {
 					console.log("Success:", success);
 					if (success) {
 						for (const message of data) {
+							console.log("Decrypting message...");
+							console.log(message.aes_key);
+							console.log(message.content);
+							console.log(privateKey);
+
 							if (message.aes_key && privateKey) {
 								const decryptedMessage = await decryptMessage(
 									message.content,
@@ -175,6 +186,7 @@ export default function Chat() {
 					});
 				}
 			} catch (error) {
+				console.error("Error fetching messages:", error);
 				toast({
 					title: "Error",
 					description: JSON.stringify(error),
@@ -200,12 +212,30 @@ export default function Chat() {
 			console.log("Websocket message:", data);
 			if (success) {
 				if (data.type === "new_message") {
-					const { data: messageData, success: messageSuccess } =
-						MessageSchema.safeParse(data);
-					console.log("Message data:", messageData);
-					if (messageSuccess) {
-						setMessages((prev) => [...prev, messageData]);
-					}
+					const parseMessage = async () => {
+						if (data.aes_key && privateKey) {
+							const decryptedMessage = await decryptMessage(
+								data.content,
+								data.aes_key,
+								privateKey,
+							);
+							data.content = decryptedMessage;
+						}
+						parseMessage();
+					};
+
+					const message: Message = {
+						id: data.message_id ?? -1,
+						sender_id: data.sender_id,
+						receiver_id: data.receiver_id,
+						content: data.content,
+						status: data.status ?? "sent",
+						expires_at: "",
+						aes_key: data.aes_key,
+					};
+					console.log("Message data:", message);
+
+					setMessages((prev) => [...prev, message]);
 				} else if (data.type === "status_update") {
 					const { data: messageData, success: messageSuccess } =
 						MessageSchema.safeParse(data);
@@ -235,7 +265,7 @@ export default function Chat() {
 		return () => {
 			websocket.close();
 		};
-	}, [token]);
+	}, [token, privateKey]);
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

@@ -366,11 +366,10 @@ func websocketHandler(c *websocket.Conn) {
 
 func handleNewMessage(senderID uint, msg *WSMessage) {
 	// Encrypt the message content and AES key
-	log.Println("Encrypting message...")
+	log.Println("handleNewMessage...")
 	log.Println("Sender ID:", senderID)
 	log.Println("Receiver ID:", msg.ReceiverID)
 	log.Println("Content:", msg.Content)
-	log.Println("AES key:", msg.AESKey)
 	log.Println("Expires at:", msg.ExpiresAt)
 
 	t, err := time.Parse(time.RFC3339, msg.ExpiresAt)
