@@ -219,18 +219,25 @@ export default function Chat() {
 		[privateKey, toast, sendStatusUpdate],
 	);
 
-	const handleStatusUpdate = useCallback(
-		(data: z.infer<typeof WSMessageSchema>) => {
-			setMessages((prev) =>
-				prev.map((message) =>
-					message.id === data.message_id
-						? { ...message, status: data.status || "sent" }
-						: message,
-				),
-			);
-		},
-		[],
-	);
+	const handleStatusUpdate = useCallback((data: WSMessage) => {
+		setMessages((prev) =>
+			prev.map((message) =>
+				message.id === data.message_id
+					? { ...message, status: data.status || "sent" }
+					: message,
+			),
+		);
+	}, []);
+
+	const handleMessageSent = useCallback((data: WSMessage) => {
+		setMessages((prev) =>
+			prev.map((message) =>
+				message.id === data.message_id
+					? { ...message, status: data.status || "sent" }
+					: message,
+			),
+		);
+	}, []);
 
 	useEffect(() => {
 		const token = localStorage.getItem("token");
@@ -263,10 +270,18 @@ export default function Chat() {
 			);
 			console.log("WebSocket message:", data);
 			if (success) {
-				if (data.type === "new_message") {
-					await handleNewMessage(data);
-				} else if (data.type === "status_update") {
-					handleStatusUpdate(data);
+				switch (data.type) {
+					case "new_message":
+						await handleNewMessage(data);
+						break;
+					case "message_sent":
+						handleMessageSent(data);
+						break;
+					case "status_update":
+						handleStatusUpdate(data);
+						break;
+					default:
+						console.log("Unknown message type:", data.type);
 				}
 			}
 		};
@@ -284,7 +299,7 @@ export default function Chat() {
 		return () => {
 			websocket.close();
 		};
-	}, [router, handleNewMessage, handleStatusUpdate]);
+	}, [router, handleNewMessage, handleStatusUpdate, handleMessageSent]);
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -357,11 +372,8 @@ export default function Chat() {
 		partnerId,
 		partnerPublicKey,
 		userId,
-		wsRef,
 		isWebSocketReady,
 		toast,
-		setMessages,
-		setNewMessage,
 	]);
 
 	const sendMessage = (e: React.FormEvent) => {

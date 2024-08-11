@@ -359,10 +359,47 @@ func websocketHandler(c *websocket.Conn) {
 			handleNewMessage(user.ID, &msg)
 		case "status_update":
 			handleStatusUpdate(user.ID, &msg)
+		case "read_receipt":
+			handleReadReceipt(user.ID, &msg)
 		default:
 			log.Println("Unknown message type:", msg.Type)
 		}
 	}
+}
+
+func handleReadReceipt(userID uint, msg *WSMessage) {
+	// Update message status to "read"
+	var message Message
+	if err := db.First(&message, msg.MessageID).Error; err != nil {
+		log.Println("Error finding message:", err)
+		return
+	}
+
+	if message.ReceiverID != userID {
+		log.Println("Unauthorized read receipt attempt")
+		return
+	}
+
+	message.Status = "read"
+	if err := db.Save(&message).Error; err != nil {
+		log.Println("Error updating message status:", err)
+		return
+	}
+
+	// Notify the sender about the read receipt
+	readMsg := WSMessage{
+		Type:      "status_update",
+		MessageID: msg.MessageID,
+		Status:    "read",
+	}
+	mutex.Lock()
+	if conn, ok := clients[message.SenderID]; ok {
+		err := conn.WriteJSON(readMsg)
+		if err != nil {
+			log.Println("Error sending read receipt to sender:", err)
+		}
+	}
+	mutex.Unlock()
 }
 
 func handleNewMessage(senderID uint, msg *WSMessage) {
@@ -386,7 +423,7 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 		Content:    msg.Content,
 		AESKey:     msg.AESKey,
 		Status:     "sent",
-		ExpiresAt:  t, // Set message expiration (e.g., 24 hours)
+		ExpiresAt:  t,
 	}
 	if err := db.Create(&message).Error; err != nil {
 		log.Println("Error saving message:", err)
@@ -403,13 +440,14 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			Content:    msg.Content,
 			AESKey:     msg.AESKey,
 			MessageID:  message.ID,
+			Status:     message.Status,
 		}
 		err := conn.WriteJSON(outMsg)
 		if err != nil {
 			log.Println("Error sending message to receiver:", err)
 		} else {
-			// Update message status to "received"
-			message.Status = "received"
+			// Update message status to "delivered"
+			message.Status = "delivered"
 			db.Save(&message)
 		}
 	}
@@ -444,26 +482,37 @@ func handleStatusUpdate(userID uint, msg *WSMessage) {
 		return
 	}
 
-	message.Status = msg.Status
-	if err := db.Save(&message).Error; err != nil {
-		log.Println("Error updating message status:", err)
-		return
-	}
+	// Only update if the new status is different
+	if message.Status != msg.Status {
+		message.Status = msg.Status
+		if err := db.Save(&message).Error; err != nil {
+			log.Println("Error updating message status:", err)
+			return
+		}
 
-	// Notify the sender about the status update
-	statusMsg := WSMessage{
-		Type:      "status_update",
-		MessageID: msg.MessageID,
-		Status:    msg.Status,
-	}
-	mutex.Lock()
-	if conn, ok := clients[message.SenderID]; ok {
-		err := conn.WriteJSON(statusMsg)
-		if err != nil {
-			log.Println("Error sending status update to sender:", err)
+		// Notify the sender about the status update
+		statusMsg := WSMessage{
+			Type:      "status_update",
+			MessageID: msg.MessageID,
+			Status:    msg.Status,
+		}
+		mutex.Lock()
+		if conn, ok := clients[message.SenderID]; ok {
+			err := conn.WriteJSON(statusMsg)
+			if err != nil {
+				log.Println("Error sending status update to sender:", err)
+			}
+		}
+		mutex.Unlock()
+
+		// Notify the receiver about the status update
+		if conn, ok := clients[message.ReceiverID]; ok {
+			err := conn.WriteJSON(statusMsg)
+			if err != nil {
+				log.Println("Error sending status update to receiver:", err)
+			}
 		}
 	}
-	mutex.Unlock()
 }
 
 func jwtMiddleware(c *fiber.Ctx) error {
