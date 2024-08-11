@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { decryptMessage, encryptMessage } from "@/lib/crypto";
+import { encryptMessage } from "@/lib/crypto";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -54,56 +54,14 @@ export default function Chat() {
 	const [userId, setUserId] = useState("");
 	const [newMessage, setNewMessage] = useState("");
 	const [token, setToken] = useState("");
-	const [encryptedData, setEncryptedData] = useState({
-		encryptedMessage: "",
-		encryptedAESKey: "",
-	});
-	const [decryptedMessage, setDecryptedMessage] = useState("");
 	const [ws, setWs] = useState<WebSocket | null>(null);
 	const [privateKey, setPrivateKey] = useState("");
 	const router = useRouter();
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const wsRef = useRef<WebSocket | null>(null);
 
-	useEffect(() => {
-		const token = localStorage.getItem("token") || "";
-		if (!token) {
-			console.log("Token not found");
-			router.push("/login");
-			return;
-		}
-		setToken(token);
-	}, [router]);
-
-	useEffect(() => {
-		const userId = localStorage.getItem("user_id") || "";
-		if (!userId) {
-			console.log("User ID not found");
-			router.push("/login");
-			return;
-		}
-		setUserId(userId);
-	}, [router]);
-
-	useEffect(() => {
-		const username = localStorage.getItem("username") || "";
-		if (!username) {
-			console.log("Username not found");
-			router.push("/login");
-			return;
-		}
-		setUsername(username);
-	}, [router]);
-
-	useEffect(() => {
-		const privateKey = localStorage.getItem("privateKey") || "";
-		if (!privateKey) {
-			console.log("Private key not found");
-			router.push("/login");
-			return;
-		}
-		setPrivateKey(privateKey);
-	}, [router]);
+	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
 
 	useEffect(() => {
 		const fetchPartnerInfo = async () => {
@@ -116,7 +74,7 @@ export default function Chat() {
 				);
 				if (response.ok) {
 					const responseData = await response.json();
-					console.log(responseData);
+					// console.log(responseData);
 					const { data, success } = UserResponseSchema.safeParse(responseData);
 					if (success) {
 						const { user } = data;
@@ -152,26 +110,28 @@ export default function Chat() {
 				);
 				if (response.ok) {
 					const dataResponse = await response.json();
-					console.log(dataResponse);
+					// console.log(dataResponse);
 					const { data, success } =
 						MessageResponseSchema.safeParse(dataResponse);
-					console.log("Messages:", data);
-					console.log("Success:", success);
+					// console.log("Messages:", data);
+					// console.log("Success:", success);
 					if (success) {
 						for (const message of data) {
-							console.log("Decrypting message...");
-							console.log(message.aes_key);
-							console.log(message.content);
-							console.log(privateKey);
+							// console.log("Decrypting message...");
+							// console.log(message.content);
 
 							if (message.aes_key && privateKey) {
-								const decryptedMessage = await decryptMessage(
-									message.content,
-									message.aes_key,
-									privateKey,
-								);
+								const { decryptedMessage } = await fetch("/api/decrypt", {
+									method: "POST",
+									headers: { "Content-Type": "application/json" },
+									body: JSON.stringify({
+										encryptedMessage: message.content,
+										encryptedAESKey: message.aes_key,
+										privateKey,
+									}),
+								}).then((res) => res.json());
 								message.content = decryptedMessage;
-								console.log("Decrypted message:", message.content);
+								// console.log("Decrypted message 1:", message.content);
 							}
 						}
 						setMessages(data.reverse());
@@ -200,117 +160,209 @@ export default function Chat() {
 		}
 	}, [partnerId, toast, token, privateKey]);
 
-	useEffect(() => {
-		// Set up WebSocket connection
-		const websocket = new WebSocket(`ws://localhost:8080/ws?token=${token}`);
-		setWs(websocket);
+	const sendStatusUpdate = useCallback((messageId: number, status: string) => {
+		if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+			wsRef.current.send(
+				JSON.stringify({
+					type: "status_update",
+					message_id: messageId,
+					status: status,
+				}),
+			);
+		}
+	}, []);
 
-		websocket.onmessage = (event) => {
+	const handleNewMessage = useCallback(
+		async (data: WSMessage) => {
+			try {
+				let decryptedContent = data.content;
+				if (data.aes_key && privateKey) {
+					const response = await fetch("/api/decrypt", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							encryptedMessage: data.content,
+							encryptedAESKey: data.aes_key,
+							privateKey,
+						}),
+					});
+					const { decryptedMessage } = await response.json();
+					decryptedContent = decryptedMessage;
+				}
+				console.log("Decrypted message:", decryptedContent);
+
+				const newMessage: Message = {
+					id: data.message_id ?? -1,
+					sender_id: data.sender_id,
+					receiver_id: data.receiver_id,
+					content: decryptedContent,
+					status: data.status ?? "sent",
+					expires_at: new Date().toISOString(),
+					aes_key: data.aes_key,
+				};
+
+				setMessages((prev) => [...prev, newMessage]);
+
+				// Send status update after adding the message
+				if (data.message_id) {
+					sendStatusUpdate(data.message_id, "received");
+				}
+			} catch (error) {
+				console.error("Error processing new message:", error);
+				toast({
+					title: "Error",
+					description: "Failed to process new message",
+					variant: "destructive",
+				});
+			}
+		},
+		[privateKey, toast, sendStatusUpdate],
+	);
+
+	const handleStatusUpdate = useCallback(
+		(data: z.infer<typeof WSMessageSchema>) => {
+			setMessages((prev) =>
+				prev.map((message) =>
+					message.id === data.message_id
+						? { ...message, status: data.status || "sent" }
+						: message,
+				),
+			);
+		},
+		[],
+	);
+
+	useEffect(() => {
+		const token = localStorage.getItem("token");
+		const userId = localStorage.getItem("user_id");
+		const username = localStorage.getItem("username");
+		const privateKey = localStorage.getItem("private_key");
+
+		if (!token || !userId || !username || !privateKey) {
+			router.push("/login");
+			return;
+		}
+
+		setToken(token);
+		setUserId(userId);
+		setUsername(username);
+		setPrivateKey(privateKey);
+
+		// Iniciar la conexión WebSocket aquí
+		const websocket = new WebSocket(`ws://localhost:8080/ws?token=${token}`);
+		wsRef.current = websocket;
+
+		websocket.onopen = () => {
+			console.log("WebSocket connection established");
+			setIsWebSocketReady(true);
+		};
+
+		websocket.onmessage = async (event) => {
 			const { data, success } = WSMessageSchema.safeParse(
 				JSON.parse(event.data),
 			);
-			console.log("Websocket message:", data);
+			console.log("WebSocket message:", data);
 			if (success) {
 				if (data.type === "new_message") {
-					const parseMessage = async () => {
-						if (data.aes_key && privateKey) {
-							const decryptedMessage = await decryptMessage(
-								data.content,
-								data.aes_key,
-								privateKey,
-							);
-							data.content = decryptedMessage;
-						}
-						parseMessage();
-					};
-
-					const message: Message = {
-						id: data.message_id ?? -1,
-						sender_id: data.sender_id,
-						receiver_id: data.receiver_id,
-						content: data.content,
-						status: data.status ?? "sent",
-						expires_at: "",
-						aes_key: data.aes_key,
-					};
-					console.log("Message data:", message);
-
-					setMessages((prev) => [...prev, message]);
+					await handleNewMessage(data);
 				} else if (data.type === "status_update") {
-					const { data: messageData, success: messageSuccess } =
-						MessageSchema.safeParse(data);
-					console.log("Message data 2:", messageData);
-					if (messageSuccess) {
-						setMessages((prev) =>
-							prev.map((message) => {
-								if (message.id === messageData.id) {
-									message.status = messageData.status;
-								}
-								return message;
-							}),
-						);
-					}
+					handleStatusUpdate(data);
 				}
 			}
 		};
 
 		websocket.onerror = (event) => {
-			console.error(event);
+			console.error("WebSocket error:", event);
+			setIsWebSocketReady(false);
 		};
 
 		websocket.onclose = (event) => {
-			console.error(event);
+			console.log("WebSocket connection closed:", event);
+			setIsWebSocketReady(false);
 		};
 
 		return () => {
 			websocket.close();
 		};
-	}, [token, privateKey]);
+	}, [router, handleNewMessage, handleStatusUpdate]);
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, []);
 
-	const sendMessageCallback = useCallback(() => {
+	const sendMessageCallback = useCallback(async () => {
+		if (!isWebSocketReady) {
+			toast({
+				title: "Error",
+				description: "WebSocket connection is not ready. Please try again.",
+				variant: "destructive",
+			});
+			return;
+		}
+
+		if (!newMessage.trim()) {
+			toast({
+				title: "Error",
+				description: "Message cannot be empty.",
+				variant: "destructive",
+			});
+			return;
+		}
+
 		const tomorrow = new Date(new Date().getTime() + 24 * 60 * 60 * 1000);
 		const expiresAt = tomorrow.toISOString();
 
-		async function encryptNewMessage() {
+		try {
 			const { encryptedMessage, encryptedAESKey } = await encryptMessage(
 				newMessage,
 				partnerPublicKey,
 			);
 
-			console.log("Encrypted message:", encryptedMessage);
-			console.log("Encrypted AES key:", encryptedAESKey);
+			if (wsRef.current?.readyState === WebSocket.OPEN) {
+				const messageToSend = JSON.stringify({
+					type: "message",
+					content: encryptedMessage,
+					receiver_id: Number(partnerId),
+					aes_key: encryptedAESKey,
+					expires_at: expiresAt,
+				});
 
-			if (ws && ws.readyState === WebSocket.OPEN) {
-				ws.send(
-					JSON.stringify({
-						type: "message",
-						content: encryptedMessage,
-						receiver_id: Number.parseInt(partnerId),
-						aes_key: encryptedAESKey,
-						expires_at: expiresAt,
-					}),
-				);
+				wsRef.current.send(messageToSend);
+
+				const message: Message = {
+					id: -1, // Temporary ID
+					sender_id: Number(userId),
+					content: newMessage,
+					status: "sent",
+					receiver_id: Number(partnerId),
+					aes_key: "",
+					expires_at: expiresAt,
+				};
+
+				setMessages((prev) => [...prev, message]);
+				setNewMessage("");
+			} else {
+				throw new Error("WebSocket is not in OPEN state");
 			}
+		} catch (error) {
+			console.error("Failed to send message:", error);
+			toast({
+				title: "Error",
+				description: "Failed to send message. Please try again.",
+				variant: "destructive",
+			});
 		}
-		const message: Message = {
-			id: 0,
-			sender_id: Number.parseInt(userId),
-			content: newMessage,
-			status: "sent",
-			receiver_id: Number.parseInt(partnerId),
-			aes_key: "",
-			expires_at: expiresAt,
-		};
-
-		setMessages((prev) => [...prev, message]);
-		setNewMessage("");
-
-		encryptNewMessage();
-	}, [newMessage, partnerId, partnerPublicKey, userId, ws]);
+	}, [
+		newMessage,
+		partnerId,
+		partnerPublicKey,
+		userId,
+		wsRef,
+		isWebSocketReady,
+		toast,
+		setMessages,
+		setNewMessage,
+	]);
 
 	const sendMessage = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -325,7 +377,7 @@ export default function Chat() {
 			<div className="flex-1 overflow-y-auto mb-4 space-y-2">
 				{messages?.map((message) => (
 					<div
-						key={message.content}
+						key={`${message.id} - ${message.content}`}
 						className={"p-2 rounded-lg mx-auto bg-gray-200 max-w-md"}
 					>
 						{`${message.sender_id === Number.parseInt(userId) ? "You" : "Partner"}: ${message.content} : ${message.status}`}

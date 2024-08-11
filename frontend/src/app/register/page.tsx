@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { generateKeyPair } from "@/lib/crypto";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { z } from "zod";
@@ -21,7 +20,10 @@ export default function Register() {
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const { publicKey, privateKey } = await generateKeyPair();
+			const { publicKey, privateKey } = await fetch("/api/generate-keys").then(
+				(res) => res.json(),
+			);
+			// console.log(publicKey, privateKey);
 			const response = await fetch("http://localhost:8080/api/register", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -38,7 +40,7 @@ export default function Register() {
 				const { data, success } = RegisterDataSchema.safeParse(responseData);
 				if (success) {
 					const { user_id } = data;
-					console.log(user_id);
+					// console.log(user_id);
 					if (user_id) {
 						toast({
 							title: "Registration successful",

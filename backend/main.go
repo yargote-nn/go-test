@@ -157,12 +157,12 @@ func main() {
 
 func getUserHandler(c *fiber.Ctx) error {
 	userID := c.Params("id")
-	log.Println("User ID:", userID)
+	// log.Println("User ID:", userID)
 	var user User
 	if err := db.Where("id = ?", userID).First(&user).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
 	}
-	log.Println("User:", user)
+	// log.Println("User:", user)
 	// Map user to UserResponse
 	userResponse := UserResponse{
 		ID:        user.ID,
@@ -260,19 +260,19 @@ func loginHandler(c *fiber.Ctx) error {
 func getMessagesHandler(c *fiber.Ctx) error {
 	log.Println("Get messages")
 	username := c.Locals("username").(string)
-	log.Println("Username:", username)
+	// log.Println("Username:", username)
 	var user User
 	if err := db.Where("username = ?", username).First(&user).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
 	}
-	log.Println("User ID:", user.ID)
+	// log.Println("User ID:", user.ID)
 
 	// Get chat partner's ID
 	partnerID, err := strconv.ParseUint(c.Query("partner_id"), 10, 32)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid partner_id"})
 	}
-	log.Println("Partner ID:", partnerID)
+	// log.Println("Partner ID:", partnerID)
 
 	var messages []Message
 	if err := db.Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
@@ -282,7 +282,7 @@ func getMessagesHandler(c *fiber.Ctx) error {
 		Find(&messages).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not retrieve messages"})
 	}
-	log.Println("Messages retrieved successfully")
+	// log.Println("Messages retrieved successfully")
 
 	log.Printf("Messages: %+v", messages)
 
@@ -293,9 +293,9 @@ func getMessagesHandler(c *fiber.Ctx) error {
 			ID:         msg.ID,
 			SenderID:   msg.SenderID,
 			ReceiverID: msg.ReceiverID,
-			Content:    msg.Content, // Note: This is still encrypted
+			Content:    msg.Content,
 			Status:     msg.Status,
-			ExpiresAt:  msg.ExpiresAt.Local().Format("2006-01-02 15:04:05"),
+			ExpiresAt:  msg.ExpiresAt.Local().Format(time.RFC3339),
 			AESKey:     msg.AESKey,
 		}
 		responseMessages = append(responseMessages, responseMsg)
@@ -309,7 +309,7 @@ func websocketHandler(c *websocket.Conn) {
 	log.Println("WebSocket connection attempt received")
 
 	tokenString := c.Query("token")
-	log.Println("Received token:", tokenString)
+	// log.Println("Received token:", tokenString)
 
 	claims := jwt.MapClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -322,7 +322,7 @@ func websocketHandler(c *websocket.Conn) {
 		return
 	}
 
-	log.Println("Token validated successfully")
+	// log.Println("Token validated successfully")
 
 	username := claims["username"].(string)
 	var user User
@@ -353,6 +353,7 @@ func websocketHandler(c *websocket.Conn) {
 			break
 		}
 
+		log.Printf("Received message: %+v", msg)
 		switch msg.Type {
 		case "message":
 			handleNewMessage(user.ID, &msg)
@@ -366,11 +367,11 @@ func websocketHandler(c *websocket.Conn) {
 
 func handleNewMessage(senderID uint, msg *WSMessage) {
 	// Encrypt the message content and AES key
-	log.Println("handleNewMessage...")
-	log.Println("Sender ID:", senderID)
-	log.Println("Receiver ID:", msg.ReceiverID)
-	log.Println("Content:", msg.Content)
-	log.Println("Expires at:", msg.ExpiresAt)
+	// log.Println("handleNewMessage...")
+	// log.Println("Sender ID:", senderID)
+	// log.Println("Receiver ID:", msg.ReceiverID)
+	// log.Println("Content:", msg.Content)
+	// log.Println("Expires at:", msg.ExpiresAt)
 
 	t, err := time.Parse(time.RFC3339, msg.ExpiresAt)
 	if err != nil {
