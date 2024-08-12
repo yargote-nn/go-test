@@ -410,9 +410,8 @@ func handleStatusUpdate(userID uint, msg *WSMessage) {
 
 	log.Printf("Current message: %+v\n", message)
 	log.Printf("Received status update: %+v\n", msg)
-
-	validTransition := (message.Status == "delivered" && msg.Status == "received") ||
-		(message.Status == "received" && msg.Status == "read")
+	// TODO: Validate status transitions based on current status
+	validTransition := (message.Status != msg.Status)
 
 	if validTransition {
 		message.Status = msg.Status

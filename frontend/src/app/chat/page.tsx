@@ -63,7 +63,9 @@ export default function Chat() {
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
 
 	const sendStatusUpdate = useCallback((messageId: number, status: string) => {
+		console.log("Sending status update:", messageId, status);
 		if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+			console.log("WebSocket is open, sending status update");
 			wsRef.current.send(
 				JSON.stringify({
 					type: "status_update",
@@ -143,6 +145,7 @@ export default function Chat() {
 								message.status === "sent" &&
 								message.sender_id !== Number(userId)
 							) {
+								message.status = "received";
 								sendStatusUpdate(message.id, "received");
 							}
 						}
