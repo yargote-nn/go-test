@@ -42,7 +42,7 @@ export default function Login() {
 				localStorage.setItem("token", data.token);
 				localStorage.setItem("user_id", data.user_id.toString());
 				localStorage.setItem("username", data.username);
-				localStorage.setItem("private_key", data.private_key);
+				localStorage.setItem(`private_key_${data.user_id}`, data.private_key);
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",

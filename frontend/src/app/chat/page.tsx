@@ -54,7 +54,6 @@ export default function Chat() {
 	const [userId, setUserId] = useState("");
 	const [newMessage, setNewMessage] = useState("");
 	const [token, setToken] = useState("");
-	const [ws, setWs] = useState<WebSocket | null>(null);
 	const [privateKey, setPrivateKey] = useState("");
 	const router = useRouter();
 	const { toast } = useToast();
@@ -62,6 +61,18 @@ export default function Chat() {
 	const wsRef = useRef<WebSocket | null>(null);
 
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
+
+	const sendStatusUpdate = useCallback((messageId: number, status: string) => {
+		if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+			wsRef.current.send(
+				JSON.stringify({
+					type: "status_update",
+					message_id: messageId,
+					status: status,
+				}),
+			);
+		}
+	}, []);
 
 	useEffect(() => {
 		const fetchPartnerInfo = async () => {
@@ -110,16 +121,10 @@ export default function Chat() {
 				);
 				if (response.ok) {
 					const dataResponse = await response.json();
-					// console.log(dataResponse);
 					const { data, success } =
 						MessageResponseSchema.safeParse(dataResponse);
-					// console.log("Messages:", data);
-					// console.log("Success:", success);
 					if (success) {
 						for (const message of data) {
-							// console.log("Decrypting message...");
-							// console.log(message.content);
-
 							if (message.aes_key && privateKey) {
 								const { decryptedMessage } = await fetch("/api/decrypt", {
 									method: "POST",
@@ -131,7 +136,14 @@ export default function Chat() {
 									}),
 								}).then((res) => res.json());
 								message.content = decryptedMessage;
-								// console.log("Decrypted message 1:", message.content);
+							}
+
+							// Enviar actualización de estado si el mensaje es "sent" y no es del usuario actual
+							if (
+								message.status === "sent" &&
+								message.sender_id !== Number(userId)
+							) {
+								sendStatusUpdate(message.id, "received");
 							}
 						}
 						setMessages(data.reverse());
@@ -155,25 +167,14 @@ export default function Chat() {
 			}
 		};
 
-		if (partnerId) {
+		if (partnerId && token && privateKey && userId) {
 			fetchPartnerInfo();
 		}
-	}, [partnerId, toast, token, privateKey]);
-
-	const sendStatusUpdate = useCallback((messageId: number, status: string) => {
-		if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-			wsRef.current.send(
-				JSON.stringify({
-					type: "status_update",
-					message_id: messageId,
-					status: status,
-				}),
-			);
-		}
-	}, []);
+	}, [partnerId, toast, token, privateKey, userId, sendStatusUpdate]);
 
 	const handleNewMessage = useCallback(
 		async (data: WSMessage) => {
+			console.log("New message received:", data);
 			try {
 				let decryptedContent = data.content;
 				if (data.aes_key && privateKey) {
@@ -196,14 +197,14 @@ export default function Chat() {
 					sender_id: data.sender_id,
 					receiver_id: data.receiver_id,
 					content: decryptedContent,
-					status: data.status ?? "sent",
+					status: "received", // Cambiamos el estado a "received" inmediatamente
 					expires_at: new Date().toISOString(),
 					aes_key: data.aes_key,
 				};
 
 				setMessages((prev) => [...prev, newMessage]);
 
-				// Send status update after adding the message
+				// Enviamos la actualización de estado "received" al backend
 				if (data.message_id) {
 					sendStatusUpdate(data.message_id, "received");
 				}
@@ -220,20 +221,27 @@ export default function Chat() {
 	);
 
 	const handleStatusUpdate = useCallback((data: WSMessage) => {
+		console.log("Status update:", data.status, data.message_id);
 		setMessages((prev) =>
-			prev.map((message) =>
-				message.id === data.message_id
-					? { ...message, status: data.status || "sent" }
-					: message,
-			),
+			prev.map((message) => {
+				if (message.id === data.message_id) {
+					return { ...message, status: data.status || "sent" };
+				}
+				return message;
+			}),
 		);
 	}, []);
 
 	const handleMessageSent = useCallback((data: WSMessage) => {
+		console.log("Message sent:", data.status);
 		setMessages((prev) =>
 			prev.map((message) =>
-				message.id === data.message_id
-					? { ...message, status: data.status || "sent" }
+				message.id === -1
+					? {
+							...message,
+							status: data.status || "sent",
+							id: data.message_id ?? -1,
+						}
 					: message,
 			),
 		);
@@ -243,7 +251,7 @@ export default function Chat() {
 		const token = localStorage.getItem("token");
 		const userId = localStorage.getItem("user_id");
 		const username = localStorage.getItem("username");
-		const privateKey = localStorage.getItem("private_key");
+		const privateKey = localStorage.getItem(`private_key_${userId}`);
 
 		if (!token || !userId || !username || !privateKey) {
 			router.push("/login");
@@ -268,7 +276,7 @@ export default function Chat() {
 			const { data, success } = WSMessageSchema.safeParse(
 				JSON.parse(event.data),
 			);
-			console.log("WebSocket message:", data);
+			//console.log("WebSocket message:", data);
 			if (success) {
 				switch (data.type) {
 					case "new_message":
