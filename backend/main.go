@@ -30,14 +30,15 @@ var (
 )
 
 type WSMessage struct {
-	Type       string `json:"type"`
-	SenderID   uint   `json:"sender_id"`
-	ReceiverID uint   `json:"receiver_id"`
-	Content    string `json:"content"`
-	AESKey     string `json:"aes_key,omitempty"`
-	MessageID  uint   `json:"message_id,omitempty"`
-	Status     string `json:"status,omitempty"`
-	ExpiresAt  string `json:"expires_at,omitempty"`
+	Type           string `json:"type"`
+	SenderID       uint   `json:"sender_id"`
+	ReceiverID     uint   `json:"receiver_id"`
+	Content        string `json:"content"`
+	AESKeySender   string `json:"aes_key_sender,omitempty"`
+	AESKeyReceiver string `json:"aes_key_receiver,omitempty"`
+	MessageID      uint   `json:"message_id,omitempty"`
+	Status         string `json:"status,omitempty"`
+	ExpiresAt      string `json:"expires_at,omitempty"`
 }
 
 type UserResponse struct {
@@ -63,22 +64,24 @@ type User struct {
 
 type Message struct {
 	gorm.Model
-	SenderID   uint
-	ReceiverID uint
-	Content    string // Store encrypted content as binary data
-	Status     string
-	ExpiresAt  time.Time
-	AESKey     string // Store encrypted AES key as binary data
+	SenderID       uint
+	ReceiverID     uint
+	Content        string // Store encrypted content as binary data
+	Status         string
+	ExpiresAt      time.Time
+	AESKeySender   string // Store encrypted AES key as binary data
+	AESKeyReceiver string // Store encrypted AES key as binary data
 }
 
 type MessageResponse struct {
-	ID         uint   `json:"id"`
-	SenderID   uint   `json:"sender_id"`
-	ReceiverID uint   `json:"receiver_id"`
-	Content    string `json:"content"`
-	Status     string `json:"status"`
-	ExpiresAt  string `json:"expires_at"`
-	AESKey     string `json:"aes_key"`
+	ID             uint   `json:"id"`
+	SenderID       uint   `json:"sender_id"`
+	ReceiverID     uint   `json:"receiver_id"`
+	Content        string `json:"content"`
+	Status         string `json:"status"`
+	ExpiresAt      string `json:"expires_at"`
+	AESKeySender   string `json:"aes_key_sender"`
+	AESKeyReceiver string `json:"aes_key_receiver"`
 }
 
 func main() {
@@ -222,6 +225,7 @@ func loginHandler(c *fiber.Ctx) error {
 		"username":    user.Username,
 		"token":       t,
 		"private_key": user.PrivateKey,
+		"public_key":  user.PublicKey,
 	})
 }
 
@@ -249,13 +253,14 @@ func getMessagesHandler(c *fiber.Ctx) error {
 	var responseMessages []MessageResponse
 	for _, msg := range messages {
 		responseMsg := MessageResponse{
-			ID:         msg.ID,
-			SenderID:   msg.SenderID,
-			ReceiverID: msg.ReceiverID,
-			Content:    msg.Content,
-			Status:     msg.Status,
-			ExpiresAt:  msg.ExpiresAt.Local().Format(time.RFC3339),
-			AESKey:     msg.AESKey,
+			ID:             msg.ID,
+			SenderID:       msg.SenderID,
+			ReceiverID:     msg.ReceiverID,
+			Content:        msg.Content,
+			Status:         msg.Status,
+			ExpiresAt:      msg.ExpiresAt.Local().Format(time.RFC3339),
+			AESKeySender:   msg.AESKeySender,
+			AESKeyReceiver: msg.AESKeyReceiver,
 		}
 		responseMessages = append(responseMessages, responseMsg)
 	}
@@ -350,12 +355,13 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	}
 
 	message := Message{
-		SenderID:   senderID,
-		ReceiverID: msg.ReceiverID,
-		Content:    msg.Content,
-		AESKey:     msg.AESKey,
-		Status:     "sent",
-		ExpiresAt:  t,
+		SenderID:       senderID,
+		ReceiverID:     msg.ReceiverID,
+		Content:        msg.Content,
+		AESKeySender:   msg.AESKeySender,
+		AESKeyReceiver: msg.AESKeyReceiver,
+		Status:         "sent",
+		ExpiresAt:      t,
 	}
 	if err := db.Create(&message).Error; err != nil {
 		return
@@ -364,13 +370,14 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	mutex.Lock()
 	if conn, ok := clients[msg.ReceiverID]; ok {
 		outMsg := WSMessage{
-			Type:       "new_message",
-			SenderID:   senderID,
-			ReceiverID: msg.ReceiverID,
-			Content:    msg.Content,
-			AESKey:     msg.AESKey,
-			MessageID:  message.ID,
-			Status:     message.Status,
+			Type:           "new_message",
+			SenderID:       senderID,
+			ReceiverID:     msg.ReceiverID,
+			Content:        msg.Content,
+			AESKeySender:   msg.AESKeySender,
+			AESKeyReceiver: msg.AESKeyReceiver,
+			MessageID:      message.ID,
+			Status:         message.Status,
 		}
 		err := conn.WriteJSON(outMsg)
 		if err != nil {

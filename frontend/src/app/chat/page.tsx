@@ -23,7 +23,8 @@ const WSMessageSchema = z.object({
 	sender_id: z.number(),
 	receiver_id: z.number(),
 	content: z.string(),
-	aes_key: z.string().optional(),
+	aes_key_sender: z.string().optional(),
+	aes_key_receiver: z.string().optional(),
 	message_id: z.number().optional(),
 	status: z.string().optional(),
 });
@@ -37,7 +38,8 @@ const MessageSchema = z.object({
 	content: z.string(),
 	status: z.string(),
 	expires_at: z.string(),
-	aes_key: z.string().optional(),
+	aes_key_receiver: z.string().optional(),
+	aes_key_sender: z.string().optional(),
 });
 
 type Message = z.infer<typeof MessageSchema>;
@@ -55,6 +57,7 @@ export default function Chat() {
 	const [newMessage, setNewMessage] = useState("");
 	const [token, setToken] = useState("");
 	const [privateKey, setPrivateKey] = useState("");
+	const [publicKey, setPublicKey] = useState("");
 	const router = useRouter();
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -127,13 +130,30 @@ export default function Chat() {
 						MessageResponseSchema.safeParse(dataResponse);
 					if (success) {
 						for (const message of data) {
-							if (message.aes_key && privateKey) {
+							if (
+								message.receiver_id === Number(userId) &&
+								message.aes_key_receiver
+							) {
 								const { decryptedMessage } = await fetch("/api/decrypt", {
 									method: "POST",
 									headers: { "Content-Type": "application/json" },
 									body: JSON.stringify({
 										encryptedMessage: message.content,
-										encryptedAESKey: message.aes_key,
+										encryptedAESKey: message.aes_key_receiver,
+										privateKey,
+									}),
+								}).then((res) => res.json());
+								message.content = decryptedMessage;
+							} else if (
+								message.sender_id === Number(userId) &&
+								message.aes_key_sender
+							) {
+								const { decryptedMessage } = await fetch("/api/decrypt", {
+									method: "POST",
+									headers: { "Content-Type": "application/json" },
+									body: JSON.stringify({
+										encryptedMessage: message.content,
+										encryptedAESKey: message.aes_key_sender,
 										privateKey,
 									}),
 								}).then((res) => res.json());
@@ -180,13 +200,25 @@ export default function Chat() {
 			console.log("New message received:", data);
 			try {
 				let decryptedContent = data.content;
-				if (data.aes_key && privateKey) {
+				if (data.receiver_id === Number(userId) && data.aes_key_receiver) {
 					const response = await fetch("/api/decrypt", {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
 							encryptedMessage: data.content,
-							encryptedAESKey: data.aes_key,
+							encryptedAESKey: data.aes_key_receiver,
+							privateKey,
+						}),
+					});
+					const { decryptedMessage } = await response.json();
+					decryptedContent = decryptedMessage;
+				} else if (data.sender_id === Number(userId) && data.aes_key_sender) {
+					const response = await fetch("/api/decrypt", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							encryptedMessage: data.content,
+							encryptedAESKey: data.aes_key_sender,
 							privateKey,
 						}),
 					});
@@ -202,7 +234,8 @@ export default function Chat() {
 					content: decryptedContent,
 					status: "received", // Cambiamos el estado a "received" inmediatamente
 					expires_at: new Date().toISOString(),
-					aes_key: data.aes_key,
+					aes_key_receiver: data.aes_key_receiver,
+					aes_key_sender: data.aes_key_sender,
 				};
 
 				setMessages((prev) => [...prev, newMessage]);
@@ -220,7 +253,7 @@ export default function Chat() {
 				});
 			}
 		},
-		[privateKey, toast, sendStatusUpdate],
+		[privateKey, toast, sendStatusUpdate, userId],
 	);
 
 	const handleStatusUpdate = useCallback((data: WSMessage) => {
@@ -255,8 +288,9 @@ export default function Chat() {
 		const userId = localStorage.getItem("user_id");
 		const username = localStorage.getItem("username");
 		const privateKey = localStorage.getItem(`private_key_${userId}`);
+		const publicKey = localStorage.getItem(`public_key_${userId}`);
 
-		if (!token || !userId || !username || !privateKey) {
+		if (!token || !userId || !username || !privateKey || !publicKey) {
 			router.push("/login");
 			return;
 		}
@@ -265,6 +299,7 @@ export default function Chat() {
 		setUserId(userId);
 		setUsername(username);
 		setPrivateKey(privateKey);
+		setPublicKey(publicKey);
 
 		// Iniciar la conexión WebSocket aquí
 		const websocket = new WebSocket(`ws://localhost:8080/ws?token=${token}`);
@@ -339,17 +374,19 @@ export default function Chat() {
 		const expiresAt = tomorrow.toISOString();
 
 		try {
-			const { encryptedMessage, encryptedAESKey } = await encryptMessage(
-				newMessage,
-				partnerPublicKey,
-			);
+			const {
+				encryptedMessage,
+				encryptedAESKeyReceiver,
+				encryptedAESKeySender,
+			} = await encryptMessage(newMessage, partnerPublicKey, publicKey);
 
 			if (wsRef.current?.readyState === WebSocket.OPEN) {
 				const messageToSend = JSON.stringify({
 					type: "message",
 					content: encryptedMessage,
 					receiver_id: Number(partnerId),
-					aes_key: encryptedAESKey,
+					aes_key_sender: encryptedAESKeySender,
+					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
 				});
 
@@ -361,7 +398,8 @@ export default function Chat() {
 					content: newMessage,
 					status: "sent",
 					receiver_id: Number(partnerId),
-					aes_key: "",
+					aes_key_sender: encryptedAESKeySender,
+					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
 				};
 
@@ -385,6 +423,7 @@ export default function Chat() {
 		userId,
 		isWebSocketReady,
 		toast,
+		publicKey,
 	]);
 
 	const sendMessage = (e: React.FormEvent) => {

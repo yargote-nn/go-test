@@ -13,6 +13,7 @@ const loginDataSchema = z.object({
 	username: z.string(),
 	token: z.string(),
 	private_key: z.string(),
+	public_key: z.string(),
 });
 
 interface LoginData {
@@ -20,6 +21,7 @@ interface LoginData {
 	username: string;
 	token: string;
 	private_key: string;
+	public_key: string;
 }
 
 export default function Login() {
@@ -43,6 +45,7 @@ export default function Login() {
 				localStorage.setItem("user_id", data.user_id.toString());
 				localStorage.setItem("username", data.username);
 				localStorage.setItem(`private_key_${data.user_id}`, data.private_key);
+				localStorage.setItem(`public_key_${data.user_id}`, data.public_key);
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",

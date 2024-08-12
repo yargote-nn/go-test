@@ -31,16 +31,30 @@ function generateKeyPair(): Promise<{ publicKey: string; privateKey: string }> {
 
 async function encryptMessage(
 	message: string,
-	publicKey: string,
-): Promise<{ encryptedMessage: string; encryptedAESKey: string }> {
+	publicKeyReceiver: string,
+	publicKeySender: string,
+): Promise<{
+	encryptedMessage: string;
+	encryptedAESKeyReceiver: string;
+	encryptedAESKeySender: string;
+}> {
 	try {
 		// Generate AES key
 		const aesKey = crypto.randomBytes(32);
 
-		// Encrypt AES key with RSA public key
-		const encryptedAESKey = crypto.publicEncrypt(
+		// Encrypt AES key with RSA public key of receiver
+		const encryptedAESKeyReceiver = crypto.publicEncrypt(
 			{
-				key: publicKey,
+				key: publicKeyReceiver,
+				padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+			},
+			aesKey,
+		);
+
+		// Encrypt AES key with RSA public key of sender
+		const encryptedAESKeySender = crypto.publicEncrypt(
+			{
+				key: publicKeySender,
 				padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
 			},
 			aesKey,
@@ -57,7 +71,8 @@ async function encryptMessage(
 
 		return {
 			encryptedMessage: combinedMessage,
-			encryptedAESKey: encryptedAESKey.toString("base64"),
+			encryptedAESKeyReceiver: encryptedAESKeyReceiver.toString("base64"),
+			encryptedAESKeySender: encryptedAESKeySender.toString("base64"),
 		};
 	} catch (error) {
 		console.error("Error encrypting message:", error);
