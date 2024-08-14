@@ -1,5 +1,6 @@
 "use client";
 
+import { FileInfo } from "@/components/file-info";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
@@ -27,6 +28,7 @@ const WSMessageSchema = z.object({
 	aes_key_receiver: z.string().optional(),
 	message_id: z.number().optional(),
 	status: z.string().optional(),
+	file_metadata: z.string().optional(),
 });
 
 type WSMessage = z.infer<typeof WSMessageSchema>;
@@ -40,6 +42,7 @@ const MessageSchema = z.object({
 	expires_at: z.string(),
 	aes_key_receiver: z.string().optional(),
 	aes_key_sender: z.string().optional(),
+	file_metadata: z.string().optional(),
 });
 
 type Message = z.infer<typeof MessageSchema>;
@@ -58,6 +61,7 @@ export default function Chat() {
 	const [token, setToken] = useState("");
 	const [privateKey, setPrivateKey] = useState("");
 	const [publicKey, setPublicKey] = useState("");
+	const [file, setFile] = useState<File | null>(null);
 	const router = useRouter();
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -126,6 +130,7 @@ export default function Chat() {
 				);
 				if (response.ok) {
 					const dataResponse = await response.json();
+					console.log(dataResponse);
 					const { data, success } =
 						MessageResponseSchema.safeParse(dataResponse);
 					if (success) {
@@ -171,11 +176,13 @@ export default function Chat() {
 						}
 						setMessages(data.reverse());
 					} else {
+						setMessages([]);
 						toast({
 							title: "No messages found",
 						});
 					}
 				} else {
+					setMessages([]);
 					toast({
 						title: "Fetch messages failed",
 					});
@@ -236,6 +243,7 @@ export default function Chat() {
 					expires_at: new Date().toISOString(),
 					aes_key_receiver: data.aes_key_receiver,
 					aes_key_sender: data.aes_key_sender,
+					file_metadata: data.file_metadata,
 				};
 
 				setMessages((prev) => [...prev, newMessage]);
@@ -380,6 +388,20 @@ export default function Chat() {
 				encryptedAESKeySender,
 			} = await encryptMessage(newMessage, partnerPublicKey, publicKey);
 
+			let fileMetadata = null;
+			if (file) {
+				const formData = new FormData();
+				formData.append("file", file);
+				const response = await fetch("http://localhost:8080/api/upload", {
+					method: "POST",
+					headers: { Authorization: `Bearer ${token}` },
+					body: formData,
+				});
+
+				fileMetadata = await response.json();
+				setFile(null);
+				console.log("File metadata:", fileMetadata);
+			}
 			if (wsRef.current?.readyState === WebSocket.OPEN) {
 				const messageToSend = JSON.stringify({
 					type: "message",
@@ -388,6 +410,7 @@ export default function Chat() {
 					aes_key_sender: encryptedAESKeySender,
 					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
+					file_attachment: fileMetadata,
 				});
 
 				wsRef.current.send(messageToSend);
@@ -424,6 +447,8 @@ export default function Chat() {
 		isWebSocketReady,
 		toast,
 		publicKey,
+		file,
+		token,
 	]);
 
 	const sendMessage = (e: React.FormEvent) => {
@@ -443,11 +468,26 @@ export default function Chat() {
 						className={"p-2 rounded-lg mx-auto bg-gray-200 max-w-md"}
 					>
 						{`${message.sender_id === Number.parseInt(userId) ? "You" : "Partner"}: ${message.content} : ${message.status}`}
+						{message.file_metadata && (
+							<FileInfo
+								fileInfo={{
+									file_name: JSON.parse(message.file_metadata).file_name,
+									file_size: JSON.parse(message.file_metadata).file_size,
+									file_type: JSON.parse(message.file_metadata).file_type,
+									file_url: JSON.parse(message.file_metadata).file_url,
+								}}
+							/>
+						)}
 					</div>
 				))}
 				<div ref={messagesEndRef} />
 			</div>
 			<form onSubmit={sendMessage} className="flex space-x-2">
+				<Input
+					type="file"
+					onChange={(e) => setFile(e.target.files?.[0] as File)}
+					className="flex-1"
+				/>
 				<Input
 					type="text"
 					value={partnerId}

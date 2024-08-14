@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -9,8 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/websocket/v2"
@@ -23,20 +29,29 @@ import (
 )
 
 var (
-	clients sync.Map
-	db      *gorm.DB
+	clients  sync.Map
+	db       *gorm.DB
+	s3Client *s3.Client
 )
 
+type FileUpload struct {
+	FileName string `json:"file_name"`
+	FileSize int64  `json:"file_size"`
+	FileType string `json:"file_type"`
+	FileUrl  string `json:"file_url"`
+}
+
 type WSMessage struct {
-	Type           string `json:"type"`
-	SenderID       uint   `json:"sender_id"`
-	ReceiverID     uint   `json:"receiver_id"`
-	Content        string `json:"content"`
-	AESKeySender   string `json:"aes_key_sender,omitempty"`
-	AESKeyReceiver string `json:"aes_key_receiver,omitempty"`
-	MessageID      uint   `json:"message_id,omitempty"`
-	Status         string `json:"status,omitempty"`
-	ExpiresAt      string `json:"expires_at,omitempty"`
+	Type           string      `json:"type"`
+	SenderID       uint        `json:"sender_id"`
+	ReceiverID     uint        `json:"receiver_id"`
+	Content        string      `json:"content"`
+	AESKeySender   string      `json:"aes_key_sender,omitempty"`
+	AESKeyReceiver string      `json:"aes_key_receiver,omitempty"`
+	MessageID      uint        `json:"message_id,omitempty"`
+	Status         string      `json:"status,omitempty"`
+	ExpiresAt      string      `json:"expires_at,omitempty"`
+	FileAttachment *FileUpload `json:"file_attachment,omitempty"`
 }
 
 type UserResponse struct {
@@ -69,6 +84,7 @@ type Message struct {
 	ExpiresAt      time.Time
 	AESKeySender   string // Store encrypted AES key as binary data
 	AESKeyReceiver string // Store encrypted AES key as binary data
+	FileMetadata   string
 }
 
 type MessageResponse struct {
@@ -80,6 +96,7 @@ type MessageResponse struct {
 	ExpiresAt      string `json:"expires_at"`
 	AESKeySender   string `json:"aes_key_sender"`
 	AESKeyReceiver string `json:"aes_key_receiver"`
+	FileMetadata   string `json:"file_metadata"`
 }
 
 func main() {
@@ -105,6 +122,15 @@ func main() {
 	// Auto migrate the schema
 	db.AutoMigrate(&User{}, &Message{})
 
+	// AWS S3 client
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+
+	if err != nil {
+		log.Fatal("Error loading AWS config")
+	}
+
+	s3Client = s3.NewFromConfig(cfg)
+
 	// Setup cron job
 	setupCronJobs()
 
@@ -118,9 +144,14 @@ func main() {
 		AllowMethods:     "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
 		AllowCredentials: true,
 	}))
-
-	// Setup WebSocket
-	setupWebSocket(app)
+	app.Use(logger.New())
+	app.Use(recover.New())
+	app.Use(limiter.New(
+		limiter.Config{
+			Max:        100,
+			Expiration: 1 * time.Minute,
+		},
+	))
 
 	// Routes
 	api := app.Group("/api")
@@ -131,13 +162,70 @@ func main() {
 	api.Use(jwtMiddleware)
 	api.Get("/messages", getMessagesHandler)
 	api.Get("/users/:id", getUserHandler)
+	api.Post("/upload", uploadFileHandler)
 
-	// Add middleware
-	app.Use(logger.New())  // Adds logging
-	app.Use(recover.New()) // Recovers from panics
+	// Setup WebSocket
+	setupWebSocket(app)
 
 	// Start server
 	log.Fatal(app.Listen(":8080"))
+}
+
+func uploadFileHandler(c *fiber.Ctx) error {
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "No file uploaded"})
+	}
+
+	// Validate file size
+	if file.Size > 10*1024*1024 { // 10MB limit
+		return c.Status(400).JSON(fiber.Map{"error": "File too large"})
+	}
+
+	// Generate a unique filename
+	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), file.Filename)
+
+	// Open the file
+	fileContent, err := file.Open()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Could not open file"})
+	}
+	defer fileContent.Close()
+
+	// Upload to S3
+	_, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket: aws.String(os.Getenv("S3_BUCKET")),
+		Key:    aws.String(filename),
+		Body:   fileContent,
+	})
+
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Could not upload file"})
+	}
+
+	client := s3.NewPresignClient(s3Client)
+
+	//TODO: Determinate in models of domain what is the expiration time of the file
+	req, err := client.PresignGetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(os.Getenv("S3_BUCKET")),
+		Key:    aws.String(filename),
+	}, func(po *s3.PresignOptions) {
+		po.Expires = 24 * time.Hour
+	})
+
+	if err != nil {
+		log.Printf("Failed to sign request: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Could not generate download URL"})
+	}
+
+	fileUpload := FileUpload{
+		FileName: file.Filename,
+		FileSize: file.Size,
+		FileType: file.Header.Get("Content-Type"),
+		FileUrl:  req.URL,
+	}
+
+	return c.JSON(fileUpload)
 }
 
 func getUserHandler(c *fiber.Ctx) error {
@@ -261,6 +349,7 @@ func getMessagesHandler(c *fiber.Ctx) error {
 			ExpiresAt:      msg.ExpiresAt.Format(time.RFC3339),
 			AESKeySender:   msg.AESKeySender,
 			AESKeyReceiver: msg.AESKeyReceiver,
+			FileMetadata:   msg.FileMetadata,
 		}
 		responseMessages = append(responseMessages, responseMsg)
 	}
@@ -294,6 +383,7 @@ func websocketHandler(c *websocket.Conn) {
 		c.Close()
 	}()
 
+	// Heartbeat
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -363,6 +453,12 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 		return
 	}
 
+	var fileMetadata string
+	if msg.FileAttachment != nil {
+		fileMetadataBytes, _ := json.Marshal(msg.FileAttachment)
+		fileMetadata = string(fileMetadataBytes)
+	}
+
 	message := Message{
 		SenderID:       senderID,
 		ReceiverID:     msg.ReceiverID,
@@ -371,6 +467,7 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 		AESKeyReceiver: msg.AESKeyReceiver,
 		Status:         "sent",
 		ExpiresAt:      t,
+		FileMetadata:   fileMetadata,
 	}
 	if err := db.Create(&message).Error; err != nil {
 		log.Printf("Error creating message: %v\n", err)
@@ -389,6 +486,7 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			AESKeyReceiver: msg.AESKeyReceiver,
 			MessageID:      message.ID,
 			Status:         message.Status,
+			FileAttachment: msg.FileAttachment,
 		})
 
 		if err != nil {
