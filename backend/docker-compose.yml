@@ -38,13 +38,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: golang_app
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: mypassword
-      DB_NAME: postgres
-      JWT_SECRET: supersecret
+    # environment:
+    #   DB_HOST: postgres
+    #   DB_PORT: 5432
+    #   DB_USER: postgres
+    #   DB_PASSWORD: mypassword
+    #   DB_NAME: postgres
+    #   JWT_SECRET: supersecret
     ports:
       - "8080:8080"
     depends_on:

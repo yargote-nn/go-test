@@ -22,11 +22,9 @@ import (
 	"gorm.io/gorm"
 )
 
-var db *gorm.DB
-
 var (
-	clients = make(map[uint]*websocket.Conn)
-	mutex   = &sync.Mutex{}
+	clients sync.Map
+	db      *gorm.DB
 )
 
 type WSMessage struct {
@@ -250,6 +248,8 @@ func getMessagesHandler(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not retrieve messages"})
 	}
 
+	log.Printf("Found %d messages\n", len(messages))
+
 	var responseMessages []MessageResponse
 	for _, msg := range messages {
 		responseMsg := MessageResponse{
@@ -258,7 +258,7 @@ func getMessagesHandler(c *fiber.Ctx) error {
 			ReceiverID:     msg.ReceiverID,
 			Content:        msg.Content,
 			Status:         msg.Status,
-			ExpiresAt:      msg.ExpiresAt.Local().Format(time.RFC3339),
+			ExpiresAt:      msg.ExpiresAt.Format(time.RFC3339),
 			AESKeySender:   msg.AESKeySender,
 			AESKeyReceiver: msg.AESKeyReceiver,
 		}
@@ -287,15 +287,22 @@ func websocketHandler(c *websocket.Conn) {
 		return
 	}
 
-	mutex.Lock()
-	clients[user.ID] = c
-	mutex.Unlock()
+	clients.Store(user.ID, c)
 
 	defer func() {
-		mutex.Lock()
-		delete(clients, user.ID)
-		mutex.Unlock()
+		clients.Delete(user.ID)
 		c.Close()
+	}()
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			err := c.WriteMessage(websocket.PingMessage, nil)
+			if err != nil {
+				return
+			}
+		}
 	}()
 
 	for {
@@ -321,15 +328,18 @@ func websocketHandler(c *websocket.Conn) {
 func handleReadReceipt(userID uint, msg *WSMessage) {
 	var message Message
 	if err := db.First(&message, msg.MessageID).Error; err != nil {
+		log.Println("Error finding message:", err)
 		return
 	}
 
 	if message.ReceiverID != userID {
+		log.Println("User does not have permission to read message")
 		return
 	}
 
 	message.Status = "read"
 	if err := db.Save(&message).Error; err != nil {
+		log.Println("Error updating message status:", err)
 		return
 	}
 
@@ -338,14 +348,13 @@ func handleReadReceipt(userID uint, msg *WSMessage) {
 		MessageID: msg.MessageID,
 		Status:    "read",
 	}
-	mutex.Lock()
-	if conn, ok := clients[message.SenderID]; ok {
-		err := conn.WriteJSON(readMsg)
+
+	if conn, ok := clients.Load(message.SenderID); ok {
+		err := conn.(*websocket.Conn).WriteJSON(readMsg)
 		if err != nil {
 			log.Println("Error sending read receipt to sender:", err)
 		}
 	}
-	mutex.Unlock()
 }
 
 func handleNewMessage(senderID uint, msg *WSMessage) {
@@ -364,12 +373,14 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 		ExpiresAt:      t,
 	}
 	if err := db.Create(&message).Error; err != nil {
+		log.Printf("Error creating message: %v\n", err)
 		return
 	}
 
-	mutex.Lock()
-	if conn, ok := clients[msg.ReceiverID]; ok {
-		outMsg := WSMessage{
+	// send message to receiver if online
+	if conn, ok := clients.Load(msg.ReceiverID); ok {
+		wsConn := conn.(*websocket.Conn)
+		err := wsConn.WriteJSON(WSMessage{
 			Type:           "new_message",
 			SenderID:       senderID,
 			ReceiverID:     msg.ReceiverID,
@@ -378,8 +389,8 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			AESKeyReceiver: msg.AESKeyReceiver,
 			MessageID:      message.ID,
 			Status:         message.Status,
-		}
-		err := conn.WriteJSON(outMsg)
+		})
+
 		if err != nil {
 			log.Println("Error sending message to receiver:", err)
 		} else {
@@ -387,68 +398,49 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 			db.Save(&message)
 		}
 	}
-	mutex.Unlock()
 
+	// send confirmation to sender
 	confirmMsg := WSMessage{
 		Type:      "message_sent",
 		MessageID: message.ID,
 		Status:    message.Status,
 	}
 
-	mutex.Lock()
-	if conn, ok := clients[senderID]; ok {
-		err := conn.WriteJSON(confirmMsg)
+	if conn, ok := clients.Load(senderID); ok {
+		err := conn.(*websocket.Conn).WriteJSON(confirmMsg)
 		if err != nil {
-			log.Println("Error sending confirmation to sender:", err)
+			log.Println("Error sending message confirmation to sender:", err)
 		}
 	}
-	mutex.Unlock()
 }
 
 func handleStatusUpdate(userID uint, msg *WSMessage) {
 	var message Message
 	if err := db.First(&message, msg.MessageID).Error; err != nil {
+		log.Println("Error finding message:", err)
 		return
 	}
 
 	if message.ReceiverID != userID {
+		log.Println("User does not have permission to update message status")
 		return
 	}
 
-	log.Printf("Current message: %+v\n", message)
-	log.Printf("Received status update: %+v\n", msg)
-	// TODO: Validate status transitions based on current status
-	validTransition := (message.Status != msg.Status)
+	message.Status = msg.Status
+	if err := db.Save(&message).Error; err != nil {
+		log.Println("Error updating message status:", err)
+		return
+	}
 
-	if validTransition {
-		message.Status = msg.Status
-		if err := db.Save(&message).Error; err != nil {
-			return
-		}
-
-		statusMsg := WSMessage{
+	if conn, ok := clients.Load(message.SenderID); ok {
+		err := conn.(*websocket.Conn).WriteJSON(WSMessage{
 			Type:      "status_update",
 			MessageID: msg.MessageID,
 			Status:    msg.Status,
+		})
+		if err != nil {
+			log.Println("Error sending status update to sender:", err)
 		}
-
-		mutex.Lock()
-		if conn, ok := clients[message.SenderID]; ok {
-			err := conn.WriteJSON(statusMsg)
-			if err != nil {
-				log.Println("Error sending status update to sender:", err)
-			}
-		}
-		mutex.Unlock()
-
-		mutex.Lock()
-		if conn, ok := clients[message.ReceiverID]; ok {
-			err := conn.WriteJSON(statusMsg)
-			if err != nil {
-				log.Println("Error sending status update to receiver:", err)
-			}
-		}
-		mutex.Unlock()
 	}
 }
 
