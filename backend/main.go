@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -42,16 +41,16 @@ type FileUpload struct {
 }
 
 type WSMessage struct {
-	Type           string      `json:"type"`
-	SenderID       uint        `json:"sender_id"`
-	ReceiverID     uint        `json:"receiver_id"`
-	Content        string      `json:"content"`
-	AESKeySender   string      `json:"aes_key_sender,omitempty"`
-	AESKeyReceiver string      `json:"aes_key_receiver,omitempty"`
-	MessageID      uint        `json:"message_id,omitempty"`
-	Status         string      `json:"status,omitempty"`
-	ExpiresAt      string      `json:"expires_at,omitempty"`
-	FileAttachment *FileUpload `json:"file_attachment,omitempty"`
+	Type            string `json:"type"`
+	SenderID        uint   `json:"sender_id"`
+	ReceiverID      uint   `json:"receiver_id"`
+	Content         string `json:"content"`
+	AESKeySender    string `json:"aes_key_sender,omitempty"`
+	AESKeyReceiver  string `json:"aes_key_receiver,omitempty"`
+	MessageID       uint   `json:"message_id,omitempty"`
+	Status          string `json:"status,omitempty"`
+	ExpiresAt       string `json:"expires_at,omitempty"`
+	FileAttachments string `json:"file_attachments,omitempty"`
 }
 
 type UserResponse struct {
@@ -77,26 +76,30 @@ type User struct {
 
 type Message struct {
 	gorm.Model
-	SenderID       uint
-	ReceiverID     uint
-	Content        string // Store encrypted content as binary data
-	Status         string
-	ExpiresAt      time.Time
-	AESKeySender   string // Store encrypted AES key as binary data
-	AESKeyReceiver string // Store encrypted AES key as binary data
-	FileMetadata   string
+	SenderID        uint
+	ReceiverID      uint
+	Content         string // Store encrypted content as binary data
+	Status          string
+	ExpiresAt       time.Time
+	AESKeySender    string // Store encrypted AES key as binary data
+	AESKeyReceiver  string // Store encrypted AES key as binary data
+	FileAttachments string
 }
 
 type MessageResponse struct {
-	ID             uint   `json:"id"`
-	SenderID       uint   `json:"sender_id"`
-	ReceiverID     uint   `json:"receiver_id"`
-	Content        string `json:"content"`
-	Status         string `json:"status"`
-	ExpiresAt      string `json:"expires_at"`
-	AESKeySender   string `json:"aes_key_sender"`
-	AESKeyReceiver string `json:"aes_key_receiver"`
-	FileMetadata   string `json:"file_metadata"`
+	ID              uint   `json:"id"`
+	SenderID        uint   `json:"sender_id"`
+	ReceiverID      uint   `json:"receiver_id"`
+	Content         string `json:"content"`
+	Status          string `json:"status"`
+	ExpiresAt       string `json:"expires_at"`
+	AESKeySender    string `json:"aes_key_sender"`
+	AESKeyReceiver  string `json:"aes_key_receiver"`
+	FileAttachments string `json:"file_attachments"`
+}
+
+type MultiFileUploadResponse struct {
+	Files []FileUpload `json:"files"`
 }
 
 func main() {
@@ -149,7 +152,7 @@ func main() {
 	app.Use(limiter.New(
 		limiter.Config{
 			Max:        100,
-			Expiration: 1 * time.Minute,
+			Expiration: 10 * time.Minute,
 		},
 	))
 
@@ -163,12 +166,80 @@ func main() {
 	api.Get("/messages", getMessagesHandler)
 	api.Get("/users/:id", getUserHandler)
 	api.Post("/upload", uploadFileHandler)
+	api.Post("/upload-multiple", uploadMultipleFilesHandler)
 
 	// Setup WebSocket
 	setupWebSocket(app)
 
 	// Start server
 	log.Fatal(app.Listen(":8080"))
+}
+
+func uploadMultipleFilesHandler(c *fiber.Ctx) error {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Failed to parse multipart form"})
+	}
+
+	files := form.File["files"]
+	if len(files) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "No files uploaded"})
+	}
+
+	var uploadedFiles []FileUpload
+
+	for _, file := range files {
+		// Validate file size
+		if file.Size > 10*1024*1024 { // 10MB limit
+			return c.Status(400).JSON(fiber.Map{"error": fmt.Sprintf("File %s is too large", file.Filename)})
+		}
+
+		// Generate a unique filename
+		filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), file.Filename)
+
+		// Open the file
+		fileContent, err := file.Open()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Could not open file %s", file.Filename)})
+		}
+		defer fileContent.Close()
+
+		// Upload to S3
+		_, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+			Bucket: aws.String(os.Getenv("S3_BUCKET")),
+			Key:    aws.String(filename),
+			Body:   fileContent,
+		})
+
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Could not upload file %s", file.Filename)})
+		}
+
+		client := s3.NewPresignClient(s3Client)
+
+		req, err := client.PresignGetObject(context.Background(), &s3.GetObjectInput{
+			Bucket: aws.String(os.Getenv("S3_BUCKET")),
+			Key:    aws.String(filename),
+		}, func(po *s3.PresignOptions) {
+			po.Expires = 24 * time.Hour
+		})
+
+		if err != nil {
+			log.Printf("Failed to sign request for file %s: %v", file.Filename, err)
+			return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Could not generate download URL for file %s", file.Filename)})
+		}
+
+		fileUpload := FileUpload{
+			FileName: file.Filename,
+			FileSize: file.Size,
+			FileType: file.Header.Get("Content-Type"),
+			FileUrl:  req.URL,
+		}
+
+		uploadedFiles = append(uploadedFiles, fileUpload)
+	}
+
+	return c.JSON(MultiFileUploadResponse{Files: uploadedFiles})
 }
 
 func uploadFileHandler(c *fiber.Ctx) error {
@@ -341,15 +412,15 @@ func getMessagesHandler(c *fiber.Ctx) error {
 	var responseMessages []MessageResponse
 	for _, msg := range messages {
 		responseMsg := MessageResponse{
-			ID:             msg.ID,
-			SenderID:       msg.SenderID,
-			ReceiverID:     msg.ReceiverID,
-			Content:        msg.Content,
-			Status:         msg.Status,
-			ExpiresAt:      msg.ExpiresAt.Format(time.RFC3339),
-			AESKeySender:   msg.AESKeySender,
-			AESKeyReceiver: msg.AESKeyReceiver,
-			FileMetadata:   msg.FileMetadata,
+			ID:              msg.ID,
+			SenderID:        msg.SenderID,
+			ReceiverID:      msg.ReceiverID,
+			Content:         msg.Content,
+			Status:          msg.Status,
+			ExpiresAt:       msg.ExpiresAt.Format(time.RFC3339),
+			AESKeySender:    msg.AESKeySender,
+			AESKeyReceiver:  msg.AESKeyReceiver,
+			FileAttachments: msg.FileAttachments,
 		}
 		responseMessages = append(responseMessages, responseMsg)
 	}
@@ -402,6 +473,8 @@ func websocketHandler(c *websocket.Conn) {
 			break
 		}
 
+		log.Printf("Received message: %v\n", msg)
+
 		switch msg.Type {
 		case "message":
 			handleNewMessage(user.ID, &msg)
@@ -453,21 +526,15 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 		return
 	}
 
-	var fileMetadata string
-	if msg.FileAttachment != nil {
-		fileMetadataBytes, _ := json.Marshal(msg.FileAttachment)
-		fileMetadata = string(fileMetadataBytes)
-	}
-
 	message := Message{
-		SenderID:       senderID,
-		ReceiverID:     msg.ReceiverID,
-		Content:        msg.Content,
-		AESKeySender:   msg.AESKeySender,
-		AESKeyReceiver: msg.AESKeyReceiver,
-		Status:         "sent",
-		ExpiresAt:      t,
-		FileMetadata:   fileMetadata,
+		SenderID:        senderID,
+		ReceiverID:      msg.ReceiverID,
+		Content:         msg.Content,
+		AESKeySender:    msg.AESKeySender,
+		AESKeyReceiver:  msg.AESKeyReceiver,
+		Status:          "sent",
+		ExpiresAt:       t,
+		FileAttachments: msg.FileAttachments,
 	}
 	if err := db.Create(&message).Error; err != nil {
 		log.Printf("Error creating message: %v\n", err)
@@ -478,15 +545,15 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	if conn, ok := clients.Load(msg.ReceiverID); ok {
 		wsConn := conn.(*websocket.Conn)
 		err := wsConn.WriteJSON(WSMessage{
-			Type:           "new_message",
-			SenderID:       senderID,
-			ReceiverID:     msg.ReceiverID,
-			Content:        msg.Content,
-			AESKeySender:   msg.AESKeySender,
-			AESKeyReceiver: msg.AESKeyReceiver,
-			MessageID:      message.ID,
-			Status:         message.Status,
-			FileAttachment: msg.FileAttachment,
+			Type:            "new_message",
+			SenderID:        senderID,
+			ReceiverID:      msg.ReceiverID,
+			Content:         msg.Content,
+			AESKeySender:    msg.AESKeySender,
+			AESKeyReceiver:  msg.AESKeyReceiver,
+			MessageID:       message.ID,
+			Status:          message.Status,
+			FileAttachments: msg.FileAttachments,
 		})
 
 		if err != nil {

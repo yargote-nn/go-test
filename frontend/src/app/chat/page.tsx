@@ -28,7 +28,7 @@ const WSMessageSchema = z.object({
 	aes_key_receiver: z.string().optional(),
 	message_id: z.number().optional(),
 	status: z.string().optional(),
-	file_metadata: z.string().optional(),
+	file_attachments: z.string().optional(),
 });
 
 type WSMessage = z.infer<typeof WSMessageSchema>;
@@ -42,7 +42,7 @@ const MessageSchema = z.object({
 	expires_at: z.string(),
 	aes_key_receiver: z.string().optional(),
 	aes_key_sender: z.string().optional(),
-	file_metadata: z.string().optional(),
+	file_attachments: z.string().optional(),
 });
 
 type Message = z.infer<typeof MessageSchema>;
@@ -50,6 +50,15 @@ type Message = z.infer<typeof MessageSchema>;
 const MessageResponseSchema = z.array(MessageSchema);
 
 type MessageResponse = z.infer<typeof MessageResponseSchema>;
+
+const FileInfoSchema = z.object({
+	file_name: z.string(),
+	file_size: z.number(),
+	file_type: z.string(),
+	file_url: z.string(),
+});
+
+type FileInfoType = z.infer<typeof FileInfoSchema>;
 
 export default function Chat() {
 	const [username, setUsername] = useState("");
@@ -61,7 +70,7 @@ export default function Chat() {
 	const [token, setToken] = useState("");
 	const [privateKey, setPrivateKey] = useState("");
 	const [publicKey, setPublicKey] = useState("");
-	const [file, setFile] = useState<File | null>(null);
+	const [files, setFiles] = useState<File[]>([]);
 	const router = useRouter();
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -243,7 +252,7 @@ export default function Chat() {
 					expires_at: new Date().toISOString(),
 					aes_key_receiver: data.aes_key_receiver,
 					aes_key_sender: data.aes_key_sender,
-					file_metadata: data.file_metadata,
+					file_attachments: data.file_attachments,
 				};
 
 				setMessages((prev) => [...prev, newMessage]);
@@ -369,7 +378,7 @@ export default function Chat() {
 			return;
 		}
 
-		if (!newMessage.trim()) {
+		if (!newMessage.trim() && files.length === 0) {
 			toast({
 				title: "Error",
 				description: "Message cannot be empty.",
@@ -388,20 +397,28 @@ export default function Chat() {
 				encryptedAESKeySender,
 			} = await encryptMessage(newMessage, partnerPublicKey, publicKey);
 
-			let fileMetadata = null;
-			if (file) {
+			let fileAttachments = [];
+			if (files.length > 0) {
 				const formData = new FormData();
-				formData.append("file", file);
-				const response = await fetch("http://localhost:8080/api/upload", {
-					method: "POST",
-					headers: { Authorization: `Bearer ${token}` },
-					body: formData,
-				});
+				for (let i = 0; i < files.length; i++) {
+					formData.append("files", files[i]);
+				}
 
-				fileMetadata = await response.json();
-				setFile(null);
-				console.log("File metadata:", fileMetadata);
+				const response = await fetch(
+					"http://localhost:8080/api/upload-multiple",
+					{
+						method: "POST",
+						headers: { Authorization: `Bearer ${token}` },
+						body: formData,
+					},
+				);
+
+				const result = await response.json();
+				fileAttachments = result.files;
+				setFiles([]);
+				console.log("Files metadata:", fileAttachments);
 			}
+
 			if (wsRef.current?.readyState === WebSocket.OPEN) {
 				const messageToSend = JSON.stringify({
 					type: "message",
@@ -410,8 +427,9 @@ export default function Chat() {
 					aes_key_sender: encryptedAESKeySender,
 					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
-					file_attachment: fileMetadata,
+					file_attachments: JSON.stringify(fileAttachments),
 				});
+				console.log("Message to send:", messageToSend);
 
 				wsRef.current.send(messageToSend);
 
@@ -424,6 +442,7 @@ export default function Chat() {
 					aes_key_sender: encryptedAESKeySender,
 					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
+					file_attachments: JSON.stringify(fileAttachments),
 				};
 
 				setMessages((prev) => [...prev, message]);
@@ -447,7 +466,7 @@ export default function Chat() {
 		isWebSocketReady,
 		toast,
 		publicKey,
-		file,
+		files,
 		token,
 	]);
 
@@ -467,17 +486,21 @@ export default function Chat() {
 						key={`${message.id} - ${message.content}`}
 						className={"p-2 rounded-lg mx-auto bg-gray-200 max-w-md"}
 					>
-						{`${message.sender_id === Number.parseInt(userId) ? "You" : "Partner"}: ${message.content} : ${message.status}`}
-						{message.file_metadata && (
-							<FileInfo
-								fileInfo={{
-									file_name: JSON.parse(message.file_metadata).file_name,
-									file_size: JSON.parse(message.file_metadata).file_size,
-									file_type: JSON.parse(message.file_metadata).file_type,
-									file_url: JSON.parse(message.file_metadata).file_url,
-								}}
-							/>
-						)}
+						{`${
+							message.sender_id === Number.parseInt(userId) ? "You" : "Partner"
+						}: ${message.content} : ${message.status}`}
+						{message.file_attachments &&
+							JSON.parse(message.file_attachments).map((file: FileInfoType) => (
+								<FileInfo
+									key={file.file_name}
+									fileInfo={{
+										file_name: file.file_name,
+										file_size: file.file_size,
+										file_type: file.file_type,
+										file_url: file.file_url,
+									}}
+								/>
+							))}
 					</div>
 				))}
 				<div ref={messagesEndRef} />
@@ -485,8 +508,9 @@ export default function Chat() {
 			<form onSubmit={sendMessage} className="flex space-x-2">
 				<Input
 					type="file"
-					onChange={(e) => setFile(e.target.files?.[0] as File)}
+					onChange={(e) => setFiles(Array.from(e.target.files || []))}
 					className="flex-1"
+					multiple={true}
 				/>
 				<Input
 					type="text"
