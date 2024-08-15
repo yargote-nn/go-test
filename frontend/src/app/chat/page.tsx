@@ -33,6 +33,19 @@ const WSMessageSchema = z.object({
 
 type WSMessage = z.infer<typeof WSMessageSchema>;
 
+const FileUploadSchema = z.object({
+	file_name: z.string(),
+	file_size: z.number(),
+	file_type: z.string(),
+	file_url: z.string(),
+});
+
+type FileUpload = z.infer<typeof FileUploadSchema>;
+
+const FileUploadsSchema = z.array(FileUploadSchema);
+
+type FileUploads = z.infer<typeof FileUploadsSchema>;
+
 const MessageSchema = z.object({
 	id: z.number(),
 	sender_id: z.number(),
@@ -42,7 +55,7 @@ const MessageSchema = z.object({
 	expires_at: z.string(),
 	aes_key_receiver: z.string().optional(),
 	aes_key_sender: z.string().optional(),
-	file_attachments: z.string().optional(),
+	file_attachments: FileUploadsSchema.nullable(),
 });
 
 type Message = z.infer<typeof MessageSchema>;
@@ -50,15 +63,6 @@ type Message = z.infer<typeof MessageSchema>;
 const MessageResponseSchema = z.array(MessageSchema);
 
 type MessageResponse = z.infer<typeof MessageResponseSchema>;
-
-const FileInfoSchema = z.object({
-	file_name: z.string(),
-	file_size: z.number(),
-	file_type: z.string(),
-	file_url: z.string(),
-});
-
-type FileInfoType = z.infer<typeof FileInfoSchema>;
 
 export default function Chat() {
 	const [username, setUsername] = useState("");
@@ -70,7 +74,7 @@ export default function Chat() {
 	const [token, setToken] = useState("");
 	const [privateKey, setPrivateKey] = useState("");
 	const [publicKey, setPublicKey] = useState("");
-	const [files, setFiles] = useState<File[]>([]);
+	const [fileUploads, setFileUploads] = useState<FileUploads>([]);
 	const router = useRouter();
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -103,7 +107,6 @@ export default function Chat() {
 				);
 				if (response.ok) {
 					const responseData = await response.json();
-					// console.log(responseData);
 					const { data, success } = UserResponseSchema.safeParse(responseData);
 					if (success) {
 						const { user } = data;
@@ -139,51 +142,60 @@ export default function Chat() {
 				);
 				if (response.ok) {
 					const dataResponse = await response.json();
-					console.log(dataResponse);
 					const { data, success } =
 						MessageResponseSchema.safeParse(dataResponse);
 					if (success) {
-						for (const message of data) {
-							if (
-								message.receiver_id === Number(userId) &&
-								message.aes_key_receiver
-							) {
-								const { decryptedMessage } = await fetch("/api/decrypt", {
-									method: "POST",
-									headers: { "Content-Type": "application/json" },
-									body: JSON.stringify({
-										encryptedMessage: message.content,
-										encryptedAESKey: message.aes_key_receiver,
-										privateKey,
-									}),
-								}).then((res) => res.json());
-								message.content = decryptedMessage;
-							} else if (
-								message.sender_id === Number(userId) &&
-								message.aes_key_sender
-							) {
-								const { decryptedMessage } = await fetch("/api/decrypt", {
-									method: "POST",
-									headers: { "Content-Type": "application/json" },
-									body: JSON.stringify({
-										encryptedMessage: message.content,
-										encryptedAESKey: message.aes_key_sender,
-										privateKey,
-									}),
-								}).then((res) => res.json());
-								message.content = decryptedMessage;
-							}
+						const decryptedMessages = await Promise.all(
+							data.map(async (message) => {
+								if (
+									message.receiver_id === Number(userId) &&
+									message.aes_key_receiver
+								) {
+									const response = await fetch("/api/decrypt", {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: JSON.stringify({
+											encryptedMessage: message.content,
+											encryptedAESKey: message.aes_key_receiver,
+											privateKey,
+											fileUploads: message.file_attachments ?? [],
+										}),
+									});
+									const { decryptedMessage, decryptedFileUploads } =
+										await response.json();
+									message.content = decryptedMessage;
+									message.file_attachments = decryptedFileUploads;
+								} else if (
+									message.sender_id === Number(userId) &&
+									message.aes_key_sender
+								) {
+									const response = await fetch("/api/decrypt", {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: JSON.stringify({
+											encryptedMessage: message.content,
+											encryptedAESKey: message.aes_key_sender,
+											privateKey,
+											fileUploads: message.file_attachments ?? [],
+										}),
+									});
+									const { decryptedMessage, decryptedFileUploads } =
+										await response.json();
+									message.content = decryptedMessage;
+									message.file_attachments = decryptedFileUploads;
+								}
 
-							// Enviar actualización de estado si el mensaje es "sent" y no es del usuario actual
-							if (
-								message.status === "sent" &&
-								message.sender_id !== Number(userId)
-							) {
-								message.status = "received";
-								sendStatusUpdate(message.id, "received");
-							}
-						}
-						setMessages(data.reverse());
+								if (
+									message.status === "sent" &&
+									message.sender_id !== Number(userId)
+								) {
+									message.status = "received";
+									sendStatusUpdate(message.id, "received");
+								}
+								return message;
+							}),
+						);
+						setMessages(decryptedMessages.reverse());
 					} else {
 						setMessages([]);
 						toast({
@@ -216,6 +228,7 @@ export default function Chat() {
 			console.log("New message received:", data);
 			try {
 				let decryptedContent = data.content;
+				let decryptedFileUploads: FileUploads = [];
 				if (data.receiver_id === Number(userId) && data.aes_key_receiver) {
 					const response = await fetch("/api/decrypt", {
 						method: "POST",
@@ -224,10 +237,13 @@ export default function Chat() {
 							encryptedMessage: data.content,
 							encryptedAESKey: data.aes_key_receiver,
 							privateKey,
+							fileUploads: data.file_attachments ?? [],
 						}),
 					});
-					const { decryptedMessage } = await response.json();
+					const { decryptedMessage, decryptedFileUploads: fileUploads } =
+						await response.json();
 					decryptedContent = decryptedMessage;
+					decryptedFileUploads = fileUploads;
 				} else if (data.sender_id === Number(userId) && data.aes_key_sender) {
 					const response = await fetch("/api/decrypt", {
 						method: "POST",
@@ -236,28 +252,44 @@ export default function Chat() {
 							encryptedMessage: data.content,
 							encryptedAESKey: data.aes_key_sender,
 							privateKey,
+							fileUploads: data.file_attachments ?? [],
 						}),
 					});
-					const { decryptedMessage } = await response.json();
+					const { decryptedMessage, decryptedFileUploads: fileUploads } =
+						await response.json();
 					decryptedContent = decryptedMessage;
+					decryptedFileUploads = fileUploads;
 				}
 				console.log("Decrypted message:", decryptedContent);
+				console.log("Decrypted file uploads:", decryptedFileUploads);
+
+				let parsedFileAttachments: FileUploads = [];
+				if (decryptedFileUploads.length > 0) {
+					try {
+						const { data: attachments, success } =
+							FileUploadsSchema.safeParse(decryptedFileUploads);
+						if (success) {
+							parsedFileAttachments = attachments;
+						}
+					} catch (error) {
+						console.error("Error parsing file attachments:", error);
+					}
+				}
 
 				const newMessage: Message = {
 					id: data.message_id ?? -1,
 					sender_id: data.sender_id,
 					receiver_id: data.receiver_id,
 					content: decryptedContent,
-					status: "received", // Cambiamos el estado a "received" inmediatamente
+					status: "received",
 					expires_at: new Date().toISOString(),
 					aes_key_receiver: data.aes_key_receiver,
 					aes_key_sender: data.aes_key_sender,
-					file_attachments: data.file_attachments,
+					file_attachments: parsedFileAttachments,
 				};
 
 				setMessages((prev) => [...prev, newMessage]);
 
-				// Enviamos la actualización de estado "received" al backend
 				if (data.message_id) {
 					sendStatusUpdate(data.message_id, "received");
 				}
@@ -318,7 +350,6 @@ export default function Chat() {
 		setPrivateKey(privateKey);
 		setPublicKey(publicKey);
 
-		// Iniciar la conexión WebSocket aquí
 		const websocket = new WebSocket(`ws://localhost:8080/ws?token=${token}`);
 		wsRef.current = websocket;
 
@@ -331,7 +362,6 @@ export default function Chat() {
 			const { data, success } = WSMessageSchema.safeParse(
 				JSON.parse(event.data),
 			);
-			//console.log("WebSocket message:", data);
 			if (success) {
 				switch (data.type) {
 					case "new_message":
@@ -364,9 +394,9 @@ export default function Chat() {
 		};
 	}, [router, handleNewMessage, handleStatusUpdate, handleMessageSent]);
 
-	useEffect(() => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, []);
+	// useEffect(() => {
+	// 	messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+	// }, []);
 
 	const sendMessageCallback = useCallback(async () => {
 		if (!isWebSocketReady) {
@@ -378,10 +408,11 @@ export default function Chat() {
 			return;
 		}
 
-		if (!newMessage.trim() && files.length === 0) {
+		if (!newMessage.trim() && fileUploads.length === 0) {
 			toast({
 				title: "Error",
-				description: "Message cannot be empty.",
+				description:
+					"Message cannot be empty and must have at least one attachment.",
 				variant: "destructive",
 			});
 			return;
@@ -395,29 +426,13 @@ export default function Chat() {
 				encryptedMessage,
 				encryptedAESKeyReceiver,
 				encryptedAESKeySender,
-			} = await encryptMessage(newMessage, partnerPublicKey, publicKey);
-
-			let fileAttachments = [];
-			if (files.length > 0) {
-				const formData = new FormData();
-				for (let i = 0; i < files.length; i++) {
-					formData.append("files", files[i]);
-				}
-
-				const response = await fetch(
-					"http://localhost:8080/api/upload-multiple",
-					{
-						method: "POST",
-						headers: { Authorization: `Bearer ${token}` },
-						body: formData,
-					},
-				);
-
-				const result = await response.json();
-				fileAttachments = result.files;
-				setFiles([]);
-				console.log("Files metadata:", fileAttachments);
-			}
+				encryptedFilesUploads,
+			} = await encryptMessage(
+				newMessage,
+				partnerPublicKey,
+				publicKey,
+				fileUploads,
+			);
 
 			if (wsRef.current?.readyState === WebSocket.OPEN) {
 				const messageToSend = JSON.stringify({
@@ -427,7 +442,7 @@ export default function Chat() {
 					aes_key_sender: encryptedAESKeySender,
 					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
-					file_attachments: JSON.stringify(fileAttachments),
+					file_attachments: JSON.stringify(encryptedFilesUploads),
 				});
 				console.log("Message to send:", messageToSend);
 
@@ -442,11 +457,12 @@ export default function Chat() {
 					aes_key_sender: encryptedAESKeySender,
 					aes_key_receiver: encryptedAESKeyReceiver,
 					expires_at: expiresAt,
-					file_attachments: JSON.stringify(fileAttachments),
+					file_attachments: fileUploads,
 				};
 
 				setMessages((prev) => [...prev, message]);
 				setNewMessage("");
+				setFileUploads([]);
 			} else {
 				throw new Error("WebSocket is not in OPEN state");
 			}
@@ -466,13 +482,52 @@ export default function Chat() {
 		isWebSocketReady,
 		toast,
 		publicKey,
-		files,
-		token,
+		fileUploads,
 	]);
 
 	const sendMessage = (e: React.FormEvent) => {
 		e.preventDefault();
 		sendMessageCallback();
+	};
+
+	const handleFileUpload = async (
+		event: React.ChangeEvent<HTMLInputElement>,
+	) => {
+		const files = Array.from(event.target.files || []);
+		if (files.length === 0) return;
+
+		const formData = new FormData();
+		// biome-ignore lint/complexity/noForEach: <explanation>
+		files.forEach((file) => formData.append("files", file));
+
+		try {
+			const response = await fetch(
+				"http://localhost:8080/api/upload-multiple",
+				{
+					method: "POST",
+					headers: { Authorization: `Bearer ${token}` },
+					body: formData,
+				},
+			);
+
+			if (!response.ok) {
+				throw new Error("File upload failed");
+			}
+
+			const result = await response.json();
+			const { data, success } = FileUploadsSchema.safeParse(result.files);
+			if (!success) {
+				throw new Error("Failed to parse file uploads");
+			}
+			setFileUploads(data);
+		} catch (error) {
+			console.error("Error uploading files:", error);
+			toast({
+				title: "Error",
+				description: "Failed to upload files. Please try again.",
+				variant: "destructive",
+			});
+		}
 	};
 
 	return (
@@ -484,49 +539,57 @@ export default function Chat() {
 				{messages?.map((message) => (
 					<div
 						key={`${message.id} - ${message.content}`}
-						className={"p-2 rounded-lg mx-auto bg-gray-200 max-w-md"}
+						className={`p-2 rounded-lg mx-auto bg-gray-200 max-w-md ${
+							message.sender_id === Number(userId)
+								? "ml-auto bg-blue-200"
+								: "mr-auto"
+						}`}
 					>
-						{`${
-							message.sender_id === Number.parseInt(userId) ? "You" : "Partner"
-						}: ${message.content} : ${message.status}`}
-						{message.file_attachments &&
-							JSON.parse(message.file_attachments).map((file: FileInfoType) => (
-								<FileInfo
-									key={file.file_name}
-									fileInfo={{
-										file_name: file.file_name,
-										file_size: file.file_size,
-										file_type: file.file_type,
-										file_url: file.file_url,
-									}}
-								/>
-							))}
+						<p>{`${
+							message.sender_id === Number(userId) ? "You" : "Partner"
+						}: ${message.content}`}</p>
+						<p className="text-xs text-gray-500">{message.status}</p>
+						{message.file_attachments?.map((file: FileUpload) => (
+							<FileInfo key={file.file_name} fileInfo={file} />
+						))}
 					</div>
 				))}
 				<div ref={messagesEndRef} />
 			</div>
-			<form onSubmit={sendMessage} className="flex space-x-2">
-				<Input
-					type="file"
-					onChange={(e) => setFiles(Array.from(e.target.files || []))}
-					className="flex-1"
-					multiple={true}
-				/>
-				<Input
-					type="text"
-					value={partnerId}
-					onChange={(e) => setPartnerId(e.target.value)}
-					placeholder="Partner ID"
-					className="flex-1"
-				/>
-				<Input
-					type="text"
-					value={newMessage}
-					onChange={(e) => setNewMessage(e.target.value)}
-					placeholder="Type a message..."
-					className="flex-1"
-				/>
-				<Button type="submit">Send</Button>
+			<form onSubmit={sendMessage} className="space-y-2">
+				<div className="flex space-x-2">
+					<Input
+						type="file"
+						onChange={handleFileUpload}
+						className="flex-1"
+						multiple={true}
+					/>
+					<Input
+						type="text"
+						value={partnerId}
+						onChange={(e) => setPartnerId(e.target.value)}
+						placeholder="Partner ID"
+						className="flex-1"
+					/>
+				</div>
+				<div className="flex space-x-2">
+					<Input
+						type="text"
+						value={newMessage}
+						onChange={(e) => setNewMessage(e.target.value)}
+						placeholder="Type a message..."
+						className="flex-1"
+					/>
+					<Button type="submit">Send</Button>
+				</div>
+				{fileUploads.length > 0 && (
+					<div className="mt-2">
+						<p>Attached files:</p>
+						{fileUploads.map((file) => (
+							<FileInfo key={file.file_name} fileInfo={file} />
+						))}
+					</div>
+				)}
 			</form>
 		</div>
 	);

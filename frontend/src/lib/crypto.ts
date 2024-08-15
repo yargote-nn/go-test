@@ -1,6 +1,18 @@
 "use server";
 
 import crypto from "crypto";
+import { z } from "zod";
+
+const FileUploadSchema = z.object({
+	file_name: z.string(),
+	file_size: z.number(),
+	file_type: z.string(),
+	file_url: z.string(),
+});
+
+const FileUploadsSchema = z.array(FileUploadSchema);
+
+type FileUploads = z.infer<typeof FileUploadsSchema>;
 
 function generateKeyPair(): Promise<{ publicKey: string; privateKey: string }> {
 	return new Promise((resolve, reject) => {
@@ -29,14 +41,32 @@ function generateKeyPair(): Promise<{ publicKey: string; privateKey: string }> {
 	});
 }
 
+function encryptString(data: string, aesKey: Buffer, iv: Buffer): string {
+	const cipher = crypto.createCipheriv("aes-256-cbc", aesKey, iv);
+	let encryptedData = cipher.update(data, "utf8", "base64");
+	encryptedData += cipher.final("base64");
+	return `${iv.toString("base64")}:${encryptedData}`;
+}
+
+function decryptString(encryptedData: string, aesKey: Buffer): string {
+	const [ivBase64, encryptedString] = encryptedData.split(":");
+	const iv = Buffer.from(ivBase64, "base64");
+	const decipher = crypto.createDecipheriv("aes-256-cbc", aesKey, iv);
+	let decryptedData = decipher.update(encryptedString, "base64", "utf8");
+	decryptedData += decipher.final("utf8");
+	return decryptedData;
+}
+
 async function encryptMessage(
 	message: string,
 	publicKeyReceiver: string,
 	publicKeySender: string,
+	fileUploads: FileUploads,
 ): Promise<{
 	encryptedMessage: string;
 	encryptedAESKeyReceiver: string;
 	encryptedAESKeySender: string;
+	encryptedFilesUploads: FileUploads;
 }> {
 	try {
 		// Generate AES key
@@ -62,17 +92,30 @@ async function encryptMessage(
 
 		// Encrypt message with AES key
 		const iv = crypto.randomBytes(16);
-		const cipher = crypto.createCipheriv("aes-256-cbc", aesKey, iv);
-		let encryptedMessage = cipher.update(message, "utf8", "base64");
-		encryptedMessage += cipher.final("base64");
+		const encryptedMessage = encryptString(message, aesKey, iv);
 
-		// Combine IV and encrypted message
-		const combinedMessage = `${iv.toString("base64")}:${encryptedMessage}`;
+		// Encrypt file uploads with AES key
+		const encryptedFileUploads = fileUploads.map((fileUpload) => {
+			const iv = crypto.randomBytes(16);
+			const encryptedFileUploadURL = encryptString(
+				fileUpload.file_url,
+				aesKey,
+				iv,
+			);
+
+			return {
+				file_name: fileUpload.file_name,
+				file_size: fileUpload.file_size,
+				file_type: fileUpload.file_type,
+				file_url: encryptedFileUploadURL,
+			};
+		});
 
 		return {
-			encryptedMessage: combinedMessage,
+			encryptedMessage,
 			encryptedAESKeyReceiver: encryptedAESKeyReceiver.toString("base64"),
 			encryptedAESKeySender: encryptedAESKeySender.toString("base64"),
+			encryptedFilesUploads: encryptedFileUploads,
 		};
 	} catch (error) {
 		console.error("Error encrypting message:", error);
@@ -84,11 +127,24 @@ async function decryptMessage(
 	encryptedMessage: string,
 	encryptedAESKey: string,
 	privateKey: string,
-): Promise<string> {
+	fileUploads: FileUploads | string,
+): Promise<{ decryptedMessage: string; decryptedFileUploads: FileUploads }> {
 	try {
 		// Ensure privateKey is a string
 		if (typeof privateKey !== "string") {
 			throw new TypeError("Private key must be a string");
+		}
+
+		let parsedFileUploads: FileUploads = [];
+
+		if (typeof fileUploads === "string") {
+			parsedFileUploads = JSON.parse(fileUploads);
+		} else {
+			const { data, success } = FileUploadsSchema.safeParse(fileUploads);
+			if (!success) {
+				throw new Error("Invalid file uploads");
+			}
+			parsedFileUploads = data;
 		}
 
 		// Decrypt AES key
@@ -100,16 +156,26 @@ async function decryptMessage(
 			Buffer.from(encryptedAESKey, "base64"),
 		);
 
-		// Split IV and encrypted message
-		const [ivBase64, encryptedData] = encryptedMessage.split(":");
-		const iv = Buffer.from(ivBase64, "base64");
-
 		// Decrypt message
-		const decipher = crypto.createDecipheriv("aes-256-cbc", aesKey, iv);
-		let decryptedMessage = decipher.update(encryptedData, "base64", "utf8");
-		decryptedMessage += decipher.final("utf8");
+		const decryptedMessage = decryptString(encryptedMessage, aesKey);
 
-		return decryptedMessage;
+		let decryptedFileUploads: FileUploads = [];
+		if (parsedFileUploads.length === 0) {
+			return { decryptedMessage, decryptedFileUploads };
+		}
+		// Decrypt url from file uploads
+		decryptedFileUploads = parsedFileUploads.map((fileUpload) => {
+			const decryptedFileUploadURL = decryptString(fileUpload.file_url, aesKey);
+
+			return {
+				file_name: fileUpload.file_name,
+				file_size: fileUpload.file_size,
+				file_type: fileUpload.file_type,
+				file_url: decryptedFileUploadURL,
+			};
+		});
+
+		return { decryptedMessage, decryptedFileUploads };
 	} catch (error) {
 		console.error("Error decrypting message:", error);
 		throw error;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -81,21 +82,30 @@ type Message struct {
 	Content         string // Store encrypted content as binary data
 	Status          string
 	ExpiresAt       time.Time
-	AESKeySender    string // Store encrypted AES key as binary data
-	AESKeyReceiver  string // Store encrypted AES key as binary data
-	FileAttachments string
+	AESKeySender    string           // Store encrypted AES key as binary data
+	AESKeyReceiver  string           // Store encrypted AES key as binary data
+	FileAttachments []FileAttachment `gorm:"foreignKey:MessageID"`
+}
+
+type FileAttachment struct {
+	gorm.Model
+	MessageID uint `gorm:"index"`
+	FileName  string
+	FileSize  int64
+	FileType  string
+	FileUrl   string
 }
 
 type MessageResponse struct {
-	ID              uint   `json:"id"`
-	SenderID        uint   `json:"sender_id"`
-	ReceiverID      uint   `json:"receiver_id"`
-	Content         string `json:"content"`
-	Status          string `json:"status"`
-	ExpiresAt       string `json:"expires_at"`
-	AESKeySender    string `json:"aes_key_sender"`
-	AESKeyReceiver  string `json:"aes_key_receiver"`
-	FileAttachments string `json:"file_attachments"`
+	ID              uint         `json:"id"`
+	SenderID        uint         `json:"sender_id"`
+	ReceiverID      uint         `json:"receiver_id"`
+	Content         string       `json:"content"`
+	Status          string       `json:"status"`
+	ExpiresAt       string       `json:"expires_at"`
+	AESKeySender    string       `json:"aes_key_sender"`
+	AESKeyReceiver  string       `json:"aes_key_receiver"`
+	FileAttachments []FileUpload `json:"file_attachments"`
 }
 
 type MultiFileUploadResponse struct {
@@ -123,7 +133,7 @@ func main() {
 	}
 
 	// Auto migrate the schema
-	db.AutoMigrate(&User{}, &Message{})
+	db.AutoMigrate(&User{}, &Message{}, &FileAttachment{})
 
 	// AWS S3 client
 	cfg, err := config.LoadDefaultConfig(context.TODO())
@@ -401,16 +411,25 @@ func getMessagesHandler(c *fiber.Ctx) error {
 	var messages []Message
 	if err := db.Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
 		user.ID, partnerID, partnerID, user.ID).
+		Preload("FileAttachments").
 		Order("created_at DESC").
 		Limit(100).
 		Find(&messages).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not retrieve messages"})
 	}
 
-	log.Printf("Found %d messages\n", len(messages))
-
 	var responseMessages []MessageResponse
 	for _, msg := range messages {
+		var fileAttachments []FileUpload
+		for _, attachment := range msg.FileAttachments {
+			fileAttachments = append(fileAttachments, FileUpload{
+				FileName: attachment.FileName,
+				FileSize: attachment.FileSize,
+				FileType: attachment.FileType,
+				FileUrl:  attachment.FileUrl,
+			})
+		}
+
 		responseMsg := MessageResponse{
 			ID:              msg.ID,
 			SenderID:        msg.SenderID,
@@ -420,7 +439,7 @@ func getMessagesHandler(c *fiber.Ctx) error {
 			ExpiresAt:       msg.ExpiresAt.Format(time.RFC3339),
 			AESKeySender:    msg.AESKeySender,
 			AESKeyReceiver:  msg.AESKeyReceiver,
-			FileAttachments: msg.FileAttachments,
+			FileAttachments: fileAttachments,
 		}
 		responseMessages = append(responseMessages, responseMsg)
 	}
@@ -527,17 +546,47 @@ func handleNewMessage(senderID uint, msg *WSMessage) {
 	}
 
 	message := Message{
-		SenderID:        senderID,
-		ReceiverID:      msg.ReceiverID,
-		Content:         msg.Content,
-		AESKeySender:    msg.AESKeySender,
-		AESKeyReceiver:  msg.AESKeyReceiver,
-		Status:          "sent",
-		ExpiresAt:       t,
-		FileAttachments: msg.FileAttachments,
+		SenderID:       senderID,
+		ReceiverID:     msg.ReceiverID,
+		Content:        msg.Content,
+		AESKeySender:   msg.AESKeySender,
+		AESKeyReceiver: msg.AESKeyReceiver,
+		Status:         "sent",
+		ExpiresAt:      t,
 	}
-	if err := db.Create(&message).Error; err != nil {
+	tx := db.Begin()
+
+	if err := tx.Create(&message).Error; err != nil {
+		tx.Rollback()
 		log.Printf("Error creating message: %v\n", err)
+		return
+	}
+
+	var fileUploads []FileUpload
+	if err := json.Unmarshal([]byte(msg.FileAttachments), &fileUploads); err != nil {
+		tx.Rollback()
+		log.Printf("Error unmarshalling file attachments: %v\n", err)
+		return
+	}
+
+	for _, file := range fileUploads {
+		fileAttachment := FileAttachment{
+			MessageID: message.ID,
+			FileName:  file.FileName,
+			FileSize:  file.FileSize,
+			FileType:  file.FileType,
+			FileUrl:   file.FileUrl,
+		}
+
+		if err := tx.Create(&fileAttachment).Error; err != nil {
+			tx.Rollback()
+			log.Printf("Error creating file attachment: %v\n", err)
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		log.Printf("Error committing transaction: %v\n", err)
 		return
 	}
 
