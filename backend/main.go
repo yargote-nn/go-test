@@ -34,6 +34,21 @@ var (
 	s3Client *s3.Client
 )
 
+type RTCSignalMessage struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+type RTCOfferAnswer struct {
+	SDP string `json:"sdp"`
+}
+
+type RTCIceCandidate struct {
+	Candidate     string `json:"candidate"`
+	SDPMLineIndex int    `json:"sdpMLineIndex"`
+	SDPMid        string `json:"sdpMid"`
+}
+
 type FileUpload struct {
 	FileName string `json:"file_name"`
 	FileSize int64  `json:"file_size"`
@@ -42,16 +57,17 @@ type FileUpload struct {
 }
 
 type WSMessage struct {
-	Type            string `json:"type"`
-	SenderID        uint   `json:"sender_id"`
-	ReceiverID      uint   `json:"receiver_id"`
-	Content         string `json:"content"`
-	AESKeySender    string `json:"aes_key_sender,omitempty"`
-	AESKeyReceiver  string `json:"aes_key_receiver,omitempty"`
-	MessageID       uint   `json:"message_id,omitempty"`
-	Status          string `json:"status,omitempty"`
-	ExpiresAt       string `json:"expires_at,omitempty"`
-	FileAttachments string `json:"file_attachments,omitempty"`
+	Type            string            `json:"type"`
+	SenderID        uint              `json:"sender_id"`
+	ReceiverID      uint              `json:"receiver_id"`
+	Content         string            `json:"content"`
+	AESKeySender    string            `json:"aes_key_sender,omitempty"`
+	AESKeyReceiver  string            `json:"aes_key_receiver,omitempty"`
+	MessageID       uint              `json:"message_id,omitempty"`
+	Status          string            `json:"status,omitempty"`
+	ExpiresAt       string            `json:"expires_at,omitempty"`
+	FileAttachments string            `json:"file_attachments,omitempty"`
+	RTCSignal       *RTCSignalMessage `json:"rtc_signal,omitempty"`
 }
 
 type UserResponse struct {
@@ -501,9 +517,35 @@ func websocketHandler(c *websocket.Conn) {
 			handleStatusUpdate(user.ID, &msg)
 		case "read_receipt":
 			handleReadReceipt(user.ID, &msg)
+		case "rtc_signal":
+			handleRTCSignal(user.ID, &msg)
 		default:
 			log.Println("Unknown message type:", msg.Type)
 		}
+	}
+}
+
+func handleRTCSignal(senderID uint, msg *WSMessage) {
+	if msg.RTCSignal == nil {
+		log.Println("Invalid RTC signal message")
+		return
+	}
+
+	// Forward the RTC signal to the intended recipient
+	if conn, ok := clients.Load(msg.ReceiverID); ok {
+		wsConn := conn.(*websocket.Conn)
+		err := wsConn.WriteJSON(WSMessage{
+			Type:       "rtc_signal",
+			SenderID:   senderID,
+			ReceiverID: msg.ReceiverID,
+			RTCSignal:  msg.RTCSignal,
+		})
+
+		if err != nil {
+			log.Println("Error sending RTC signal to receiver:", err)
+		}
+	} else {
+		log.Println("Recipient not connected:", msg.ReceiverID)
 	}
 }
 

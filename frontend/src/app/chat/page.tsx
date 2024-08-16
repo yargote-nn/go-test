@@ -9,6 +9,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
+const RTCSignalSchema = z.object({
+	type: z.string(),
+	sdp: z.string().optional(),
+	candidate: z.string().optional(),
+	sdpMLineIndex: z.number().optional(),
+	sdpMid: z.string().optional(),
+});
+
 const UserSchema = z.object({
 	id: z.number(),
 	username: z.string(),
@@ -29,6 +37,7 @@ const WSMessageSchema = z.object({
 	message_id: z.number().optional(),
 	status: z.string().optional(),
 	file_attachments: z.string().optional(),
+	rtc_signal: RTCSignalSchema.optional(),
 });
 
 type WSMessage = z.infer<typeof WSMessageSchema>;
@@ -79,6 +88,13 @@ export default function Chat() {
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const wsRef = useRef<WebSocket | null>(null);
+
+	const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+	const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+	const [isCallActive, setIsCallActive] = useState(false);
+	const peerConnection = useRef<RTCPeerConnection | null>(null);
+	const localVideoRef = useRef<HTMLVideoElement>(null);
+	const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
 
@@ -373,6 +389,11 @@ export default function Chat() {
 					case "status_update":
 						handleStatusUpdate(data);
 						break;
+					case "rtc_signal":
+						if (data.rtc_signal) {
+							handleWebRTCSignal(data.rtc_signal);
+						}
+						break;
 					default:
 						console.log("Unknown message type:", data.type);
 				}
@@ -530,6 +551,191 @@ export default function Chat() {
 		}
 	};
 
+	const initializePeerConnection = useCallback(() => {
+		const pc = new RTCPeerConnection({
+			iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+		});
+
+		pc.onicecandidate = (event) => {
+			if (event.candidate) {
+				sendWebRTCSignal({
+					type: "ice_candidate",
+					candidate: event.candidate.candidate,
+					sdpMLineIndex: event.candidate.sdpMLineIndex,
+					sdpMid: event.candidate.sdpMid,
+				});
+			}
+		};
+
+		pc.ontrack = (event) => {
+			setRemoteStream(event.streams[0]);
+		};
+
+		peerConnection.current = pc;
+	}, []);
+
+	const startCall = useCallback(async () => {
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({
+				audio: true,
+			});
+			try {
+				const videoStream = await navigator.mediaDevices.getUserMedia({
+					video: true,
+				});
+				stream.addTrack(videoStream.getVideoTracks()[0]);
+			} catch (error) {
+				console.error("Error getting video stream", error);
+			}
+			setLocalStream(stream);
+
+			if (localVideoRef.current) {
+				localVideoRef.current.srcObject = stream;
+			}
+
+			initializePeerConnection();
+
+			if (peerConnection.current) {
+				// biome-ignore lint/complexity/noForEach: <explanation>
+				stream.getTracks().forEach((track) => {
+					peerConnection.current?.addTrack(track, stream);
+				});
+
+				const offer = await peerConnection.current.createOffer();
+				await peerConnection.current.setLocalDescription(offer);
+
+				sendWebRTCSignal({
+					type: "offer",
+					sdp: offer.sdp,
+				});
+			}
+
+			setIsCallActive(true);
+		} catch (error) {
+			console.error("Error starting call:", error);
+			toast({
+				title: "Error",
+				description: "Failed to start call. Please try again.",
+				variant: "destructive",
+			});
+		}
+	}, [initializePeerConnection, toast]);
+
+	const endCall = useCallback(() => {
+		if (peerConnection.current) {
+			peerConnection.current.close();
+		}
+		if (localStream) {
+			// biome-ignore lint/complexity/noForEach: <explanation>
+			localStream.getTracks().forEach((track) => track.stop());
+		}
+		setLocalStream(null);
+		setRemoteStream(null);
+		setIsCallActive(false);
+	}, [localStream]);
+
+	const handleIncomingCall = useCallback(
+		async (offer: RTCSessionDescriptionInit) => {
+			try {
+				const stream = await navigator.mediaDevices.getUserMedia({
+					audio: true,
+				});
+				try {
+					const videoStream = await navigator.mediaDevices.getUserMedia({
+						video: true,
+					});
+					stream.addTrack(videoStream.getVideoTracks()[0]);
+				} catch (error) {
+					console.error("Error getting video stream:", error);
+				}
+
+				setLocalStream(stream);
+
+				if (localVideoRef.current) {
+					localVideoRef.current.srcObject = stream;
+				}
+
+				initializePeerConnection();
+
+				if (peerConnection.current) {
+					await peerConnection.current.setRemoteDescription(offer);
+
+					// biome-ignore lint/complexity/noForEach: <explanation>
+					stream.getTracks().forEach((track) => {
+						peerConnection.current?.addTrack(track, stream);
+					});
+
+					const answer = await peerConnection.current.createAnswer();
+					await peerConnection.current.setLocalDescription(answer);
+
+					sendWebRTCSignal({
+						type: "answer",
+						sdp: answer.sdp,
+					});
+				}
+
+				setIsCallActive(true);
+			} catch (error) {
+				console.error("Error handling incoming call:", error);
+				toast({
+					title: "Error",
+					description: "Failed to answer call. Please try again.",
+					variant: "destructive",
+				});
+			}
+		},
+		[initializePeerConnection, toast],
+	);
+
+	const handleWebRTCSignal = useCallback(
+		(signal: z.infer<typeof RTCSignalSchema>) => {
+			if (!peerConnection.current) {
+				initializePeerConnection();
+			}
+
+			switch (signal.type) {
+				case "offer":
+					handleIncomingCall({ type: "offer", sdp: signal.sdp });
+					break;
+				case "answer":
+					peerConnection.current?.setRemoteDescription({
+						type: "answer",
+						sdp: signal.sdp,
+					});
+					break;
+				case "ice_candidate":
+					peerConnection.current?.addIceCandidate({
+						candidate: signal.candidate,
+						sdpMLineIndex: signal.sdpMLineIndex,
+						sdpMid: signal.sdpMid,
+					});
+					break;
+			}
+		},
+		[handleIncomingCall, initializePeerConnection],
+	);
+
+	const sendWebRTCSignal = useCallback(
+		(signal: z.infer<typeof RTCSignalSchema>) => {
+			if (wsRef.current?.readyState === WebSocket.OPEN) {
+				wsRef.current.send(
+					JSON.stringify({
+						type: "rtc_signal",
+						receiver_id: Number(partnerId),
+						rtc_signal: signal,
+					}),
+				);
+			}
+		},
+		[partnerId],
+	);
+
+	useEffect(() => {
+		if (remoteVideoRef.current && remoteStream) {
+			remoteVideoRef.current.srcObject = remoteStream;
+		}
+	}, [remoteStream]);
+
 	return (
 		<div className="flex flex-col h-screen p-4">
 			<h1 className="text-2xl text-center font-bold mb-4">
@@ -555,6 +761,38 @@ export default function Chat() {
 					</div>
 				))}
 				<div ref={messagesEndRef} />
+			</div>
+			<div className="mb-4">
+				{isCallActive ? (
+					<div className="flex space-x-2">
+						<div className="w-1/2">
+							<video
+								ref={localVideoRef}
+								autoPlay
+								muted
+								playsInline
+								className="w-full"
+							/>
+						</div>
+						<div className="w-1/2">
+							<video
+								ref={remoteVideoRef}
+								autoPlay
+								playsInline
+								className="w-full"
+							/>
+						</div>
+					</div>
+				) : null}
+				<div className="flex justify-center mt-2">
+					{isCallActive ? (
+						<Button onClick={endCall} className="bg-red-500 hover:bg-red-600">
+							End Call
+						</Button>
+					) : (
+						<Button onClick={startCall}>Start Call</Button>
+					)}
+				</div>
 			</div>
 			<form onSubmit={sendMessage} className="space-y-2">
 				<div className="flex space-x-2">
