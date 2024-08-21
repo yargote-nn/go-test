@@ -92,6 +92,7 @@ export default function Chat() {
 	const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 	const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 	const [isCallActive, setIsCallActive] = useState(false);
+	const [isVideoEnabled, setIsVideoEnabled] = useState(true);
 	const peerConnection = useRef<RTCPeerConnection | null>(null);
 	const localVideoRef = useRef<HTMLVideoElement>(null);
 	const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -576,17 +577,12 @@ export default function Chat() {
 
 	const startCall = useCallback(async () => {
 		try {
-			const stream = await navigator.mediaDevices.getUserMedia({
+			const constraints = {
 				audio: true,
-			});
-			try {
-				const videoStream = await navigator.mediaDevices.getUserMedia({
-					video: true,
-				});
-				stream.addTrack(videoStream.getVideoTracks()[0]);
-			} catch (error) {
-				console.error("Error getting video stream", error);
-			}
+				video: isVideoEnabled,
+			};
+
+			const stream = await navigator.mediaDevices.getUserMedia(constraints);
 			setLocalStream(stream);
 
 			if (localVideoRef.current) {
@@ -607,6 +603,8 @@ export default function Chat() {
 				sendWebRTCSignal({
 					type: "offer",
 					sdp: offer.sdp,
+					sender_id: Number(userId),
+					receiver_id: Number(partnerId),
 				});
 			}
 
@@ -619,7 +617,7 @@ export default function Chat() {
 				variant: "destructive",
 			});
 		}
-	}, [initializePeerConnection, toast]);
+	}, [initializePeerConnection, toast, isVideoEnabled, partnerId, userId]);
 
 	const endCall = useCallback(() => {
 		if (peerConnection.current) {
@@ -637,18 +635,12 @@ export default function Chat() {
 	const handleIncomingCall = useCallback(
 		async (offer: RTCSessionDescriptionInit) => {
 			try {
-				const stream = await navigator.mediaDevices.getUserMedia({
+				const constraints = {
 					audio: true,
-				});
-				try {
-					const videoStream = await navigator.mediaDevices.getUserMedia({
-						video: true,
-					});
-					stream.addTrack(videoStream.getVideoTracks()[0]);
-				} catch (error) {
-					console.error("Error getting video stream:", error);
-				}
+					video: isVideoEnabled,
+				};
 
+				const stream = await navigator.mediaDevices.getUserMedia(constraints);
 				setLocalStream(stream);
 
 				if (localVideoRef.current) {
@@ -684,7 +676,7 @@ export default function Chat() {
 				});
 			}
 		},
-		[initializePeerConnection, toast],
+		[initializePeerConnection, toast, isVideoEnabled],
 	);
 
 	const handleWebRTCSignal = useCallback(
@@ -766,31 +758,52 @@ export default function Chat() {
 				{isCallActive ? (
 					<div className="flex space-x-2">
 						<div className="w-1/2">
-							<video
-								ref={localVideoRef}
-								autoPlay
-								muted
-								playsInline
-								className="w-full"
-							/>
+							{isVideoEnabled ? (
+								<video
+									ref={localVideoRef}
+									autoPlay
+									muted
+									playsInline
+									className="w-full"
+								/>
+							) : (
+								<div className="w-full h-40 bg-gray-200 flex items-center justify-center">
+									Audio Only (You)
+								</div>
+							)}
 						</div>
 						<div className="w-1/2">
-							<video
-								ref={remoteVideoRef}
-								autoPlay
-								playsInline
-								className="w-full"
-							/>
+							{isVideoEnabled ? (
+								// biome-ignore lint/a11y/useMediaCaption: <explanation>
+								<video
+									ref={remoteVideoRef}
+									autoPlay
+									playsInline
+									className="w-full"
+								/>
+							) : (
+								<div className="w-full h-40 bg-gray-200 flex items-center justify-center">
+									Audio Only (Partner)
+								</div>
+							)}
 						</div>
 					</div>
 				) : null}
-				<div className="flex justify-center mt-2">
+				<div className="flex justify-center mt-2 space-x-2">
 					{isCallActive ? (
 						<Button onClick={endCall} className="bg-red-500 hover:bg-red-600">
 							End Call
 						</Button>
 					) : (
-						<Button onClick={startCall}>Start Call</Button>
+						<>
+							<Button onClick={startCall}>Start Call</Button>
+							<Button
+								onClick={() => setIsVideoEnabled(!isVideoEnabled)}
+								className={isVideoEnabled ? "bg-blue-500" : "bg-gray-500"}
+							>
+								{isVideoEnabled ? "Video On" : "Video Off"}
+							</Button>
+						</>
 					)}
 				</div>
 			</div>

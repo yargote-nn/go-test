@@ -193,6 +193,7 @@ func main() {
 	api.Get("/users/:id", getUserHandler)
 	api.Post("/upload", uploadFileHandler)
 	api.Post("/upload-multiple", uploadMultipleFilesHandler)
+	api.Post("/delete-files", deleteFiles)
 
 	// Setup WebSocket
 	setupWebSocket(app)
@@ -233,7 +234,7 @@ func uploadMultipleFilesHandler(c *fiber.Ctx) error {
 		// Upload to S3
 		_, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket: aws.String(os.Getenv("S3_BUCKET")),
-			Key:    aws.String(filename),
+			Key:    aws.String(fmt.Sprintf("test/%s", filename)),
 			Body:   fileContent,
 		})
 
@@ -245,7 +246,7 @@ func uploadMultipleFilesHandler(c *fiber.Ctx) error {
 
 		req, err := client.PresignGetObject(context.Background(), &s3.GetObjectInput{
 			Bucket: aws.String(os.Getenv("S3_BUCKET")),
-			Key:    aws.String(filename),
+			Key:    aws.String(fmt.Sprintf("test/%s", filename)),
 		}, func(po *s3.PresignOptions) {
 			po.Expires = 24 * time.Hour
 		})
@@ -373,6 +374,12 @@ func registerHandler(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"user_id": user.ID})
+}
+
+func deleteFiles(c *fiber.Ctx) error {
+	deleteExpiredFiles()
+
+	return c.JSON(fiber.Map{"message": "Files deleted"})
 }
 
 func loginHandler(c *fiber.Ctx) error {
@@ -530,6 +537,9 @@ func handleRTCSignal(senderID uint, msg *WSMessage) {
 		log.Println("Invalid RTC signal message")
 		return
 	}
+
+	log.Printf("Received RTC signal: type=%s, sender=%d, receiver=%d",
+		msg.RTCSignal.Type, senderID, msg.ReceiverID)
 
 	// Forward the RTC signal to the intended recipient
 	if conn, ok := clients.Load(msg.ReceiverID); ok {
@@ -724,9 +734,72 @@ func jwtMiddleware(c *fiber.Ctx) error {
 func setupCronJobs() {
 	c := cron.New()
 	c.AddFunc("@hourly", deleteExpiredMessages)
+	c.AddFunc("@hourly", deleteExpiredFiles)
 	c.Start()
 }
 
 func deleteExpiredMessages() {
-	db.Where("expires_at < ?", time.Now()).Delete(&Message{})
+	// Inicia una transacción
+	tx := db.Begin()
+	if tx.Error != nil {
+		log.Fatalf("Error al iniciar la transacción: %v", tx.Error)
+	}
+
+	// Primero, encuentra los mensajes expirados
+	var expiredMessages []Message
+	if err := tx.Where("expires_at < ?", time.Now()).Find(&expiredMessages).Error; err != nil {
+		tx.Rollback()
+		log.Fatalf("Error al buscar mensajes expirados: %v", err)
+	}
+
+	// Luego, elimina los archivos adjuntos asociados a esos mensajes
+	for _, msg := range expiredMessages {
+		if err := tx.Where("message_id = ?", msg.ID).Delete(&FileAttachment{}).Error; err != nil {
+			tx.Rollback()
+			log.Fatalf("Error al eliminar archivos adjuntos: %v", err)
+		}
+	}
+
+	// Finalmente, elimina los mensajes expirados
+	if err := tx.Where("expires_at < ?", time.Now()).Delete(&Message{}).Error; err != nil {
+		tx.Rollback()
+		log.Fatalf("Error al eliminar mensajes expirados: %v", err)
+	}
+
+	// Confirma la transacción
+	if err := tx.Commit().Error; err != nil {
+		log.Fatalf("Error al confirmar la transacción: %v", err)
+	}
+}
+
+func deleteExpiredFiles() {
+
+	// Set the expiration threshold (7 days)
+	expirationThreshold := time.Now().AddDate(0, 0, -7)
+
+	// List objects in the S3 bucket
+	resp, err := s3Client.ListObjects(context.TODO(), &s3.ListObjectsInput{
+		Bucket: aws.String(os.Getenv("S3_BUCKET")),
+		Prefix: aws.String("test/"),
+	})
+
+	if err != nil {
+		log.Fatalf("Error listing objects in S3: %v", err)
+	}
+
+	// Delete objects that are older than the expiration threshold
+	for _, obj := range resp.Contents {
+		fmt.Printf("Object: %s, LastModified: %v\n", *obj.Key, obj.LastModified)
+		if obj.LastModified.Before(expirationThreshold) {
+			_, err := s3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+				Bucket: aws.String(os.Getenv("S3_BUCKET")),
+				Key:    obj.Key,
+			})
+			if err != nil {
+				log.Printf("Error deleting object %s: %v", *obj.Key, err)
+			} else {
+				log.Printf("Deleted object: %s", *obj.Key)
+			}
+		}
+	}
 }
