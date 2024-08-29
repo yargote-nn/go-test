@@ -9,44 +9,31 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
-const RTCSignalSchema = z.object({
-	type: z.string(),
-	sdp: z.string().optional(),
-	candidate: z.string().optional(),
-	sdpMLineIndex: z.number().optional(),
-	sdpMid: z.string().optional(),
-});
-
 const UserSchema = z.object({
 	id: z.number(),
-	username: z.string(),
-	public_key: z.string(),
-});
-
-const UserResponseSchema = z.object({
-	user: UserSchema,
+	nickname: z.string(),
+	publicKey: z.string(),
 });
 
 const WSMessageSchema = z.object({
 	type: z.string(),
-	sender_id: z.number(),
-	receiver_id: z.number(),
-	content: z.string(),
-	aes_key_sender: z.string().optional(),
-	aes_key_receiver: z.string().optional(),
-	message_id: z.number().optional(),
-	status: z.string().optional(),
-	file_attachments: z.string().optional(),
-	rtc_signal: RTCSignalSchema.optional(),
+	senderId: z.number(),
+	receiverId: z.number(),
+	body: z.string(),
+	aesKeySender: z.string().optional(),
+	aesKeyReceiver: z.string().optional(),
+	messageId: z.number().optional(),
+	state: z.string().optional(),
+	fileAttachments: z.string().optional(),
 });
 
 type WSMessage = z.infer<typeof WSMessageSchema>;
 
 const FileUploadSchema = z.object({
-	file_name: z.string(),
-	file_size: z.number(),
-	file_type: z.string(),
-	file_url: z.string(),
+	fileName: z.string(),
+	fileSize: z.number(),
+	fileType: z.string(),
+	fileUrl: z.string(),
 });
 
 type FileUpload = z.infer<typeof FileUploadSchema>;
@@ -57,14 +44,15 @@ type FileUploads = z.infer<typeof FileUploadsSchema>;
 
 const MessageSchema = z.object({
 	id: z.number(),
-	sender_id: z.number(),
-	receiver_id: z.number(),
-	content: z.string(),
-	status: z.string(),
-	expires_at: z.string(),
-	aes_key_receiver: z.string().optional(),
-	aes_key_sender: z.string().optional(),
-	file_attachments: FileUploadsSchema.nullable(),
+	senderId: z.number(),
+	receiverId: z.number(),
+	body: z.string(),
+	state: z.string(),
+	expiredAt: z.string(),
+	createdAt: z.string().optional(),
+	aesKeyReceiver: z.string().optional(),
+	aesKeySender: z.string().optional(),
+	fileAttachments: FileUploadsSchema.nullable().optional(),
 });
 
 type Message = z.infer<typeof MessageSchema>;
@@ -74,7 +62,7 @@ const MessageResponseSchema = z.array(MessageSchema);
 type MessageResponse = z.infer<typeof MessageResponseSchema>;
 
 export default function Chat() {
-	const [username, setUsername] = useState("");
+	const [nickname, setNickname] = useState("");
 	const [messages, setMessages] = useState<MessageResponse>([]);
 	const [partnerId, setPartnerId] = useState("");
 	const [partnerPublicKey, setPartnerPublicKey] = useState("");
@@ -99,15 +87,15 @@ export default function Chat() {
 
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
 
-	const sendStatusUpdate = useCallback((messageId: number, status: string) => {
-		console.log("Sending status update:", messageId, status);
+	const sendStatusUpdate = useCallback((messageId: number, state: string) => {
+		console.log("Sending status update:", messageId, state);
 		if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-			console.log("WebSocket is open, sending status update");
+			console.log("WebSocket is open, sending state update");
 			wsRef.current.send(
 				JSON.stringify({
 					type: "status_update",
-					message_id: messageId,
-					status: status,
+					messageId: messageId,
+					state: state,
 				}),
 			);
 		}
@@ -117,17 +105,16 @@ export default function Chat() {
 		const fetchPartnerInfo = async () => {
 			try {
 				const response = await fetch(
-					`http://localhost:8080/api/users/${partnerId}`,
+					`http://localhost:8000/api/users/${partnerId}`,
 					{
 						headers: { Authorization: `Bearer ${token}` },
 					},
 				);
 				if (response.ok) {
 					const responseData = await response.json();
-					const { data, success } = UserResponseSchema.safeParse(responseData);
+					const { data, success } = UserSchema.safeParse(responseData);
 					if (success) {
-						const { user } = data;
-						setPartnerPublicKey(user.public_key);
+						setPartnerPublicKey(data.publicKey);
 						fetchMessages();
 					} else {
 						toast({
@@ -152,7 +139,7 @@ export default function Chat() {
 		const fetchMessages = async () => {
 			try {
 				const response = await fetch(
-					`http://localhost:8080/api/messages?partner_id=${partnerId}`,
+					`http://localhost:8000/api/messages?partner_id=${partnerId}`,
 					{
 						headers: { Authorization: `Bearer ${token}` },
 					},
@@ -165,54 +152,54 @@ export default function Chat() {
 						const decryptedMessages = await Promise.all(
 							data.map(async (message) => {
 								if (
-									message.receiver_id === Number(userId) &&
-									message.aes_key_receiver
+									message.receiverId === Number(userId) &&
+									message.aesKeyReceiver
 								) {
 									const response = await fetch("/api/decrypt", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
 										body: JSON.stringify({
-											encryptedMessage: message.content,
-											encryptedAESKey: message.aes_key_receiver,
+											encryptedMessage: message.body,
+											encryptedAESKey: message.aesKeyReceiver,
 											privateKey,
-											fileUploads: message.file_attachments ?? [],
+											fileUploads: message.fileAttachments ?? [],
 										}),
 									});
 									const { decryptedMessage, decryptedFileUploads } =
 										await response.json();
-									message.content = decryptedMessage;
-									message.file_attachments = decryptedFileUploads;
+									message.body = decryptedMessage;
+									message.fileAttachments = decryptedFileUploads;
 								} else if (
-									message.sender_id === Number(userId) &&
-									message.aes_key_sender
+									message.senderId === Number(userId) &&
+									message.aesKeySender
 								) {
 									const response = await fetch("/api/decrypt", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
 										body: JSON.stringify({
-											encryptedMessage: message.content,
-											encryptedAESKey: message.aes_key_sender,
+											encryptedMessage: message.body,
+											encryptedAESKey: message.aesKeySender,
 											privateKey,
-											fileUploads: message.file_attachments ?? [],
+											fileUploads: message.fileAttachments ?? [],
 										}),
 									});
 									const { decryptedMessage, decryptedFileUploads } =
 										await response.json();
-									message.content = decryptedMessage;
-									message.file_attachments = decryptedFileUploads;
+									message.body = decryptedMessage;
+									message.fileAttachments = decryptedFileUploads;
 								}
 
 								if (
-									message.status === "sent" &&
-									message.sender_id !== Number(userId)
+									message.state === "sent" &&
+									message.senderId !== Number(userId)
 								) {
-									message.status = "received";
+									message.state = "received";
 									sendStatusUpdate(message.id, "received");
 								}
 								return message;
 							}),
 						);
-						setMessages(decryptedMessages.reverse());
+						setMessages(decryptedMessages);
 					} else {
 						setMessages([]);
 						toast({
@@ -244,32 +231,32 @@ export default function Chat() {
 		async (data: WSMessage) => {
 			console.log("New message received:", data);
 			try {
-				let decryptedContent = data.content;
+				let decryptedContent = data.body;
 				let decryptedFileUploads: FileUploads = [];
-				if (data.receiver_id === Number(userId) && data.aes_key_receiver) {
+				if (data.receiverId === Number(userId) && data.aesKeyReceiver) {
 					const response = await fetch("/api/decrypt", {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							encryptedMessage: data.content,
-							encryptedAESKey: data.aes_key_receiver,
+							encryptedMessage: data.body,
+							encryptedAESKey: data.aesKeyReceiver,
 							privateKey,
-							fileUploads: data.file_attachments ?? [],
+							fileUploads: data.fileAttachments ?? [],
 						}),
 					});
 					const { decryptedMessage, decryptedFileUploads: fileUploads } =
 						await response.json();
 					decryptedContent = decryptedMessage;
 					decryptedFileUploads = fileUploads;
-				} else if (data.sender_id === Number(userId) && data.aes_key_sender) {
+				} else if (data.senderId === Number(userId) && data.aesKeySender) {
 					const response = await fetch("/api/decrypt", {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							encryptedMessage: data.content,
-							encryptedAESKey: data.aes_key_sender,
+							encryptedMessage: data.body,
+							encryptedAESKey: data.aesKeySender,
 							privateKey,
-							fileUploads: data.file_attachments ?? [],
+							fileUploads: data.fileAttachments ?? [],
 						}),
 					});
 					const { decryptedMessage, decryptedFileUploads: fileUploads } =
@@ -277,8 +264,6 @@ export default function Chat() {
 					decryptedContent = decryptedMessage;
 					decryptedFileUploads = fileUploads;
 				}
-				console.log("Decrypted message:", decryptedContent);
-				console.log("Decrypted file uploads:", decryptedFileUploads);
 
 				let parsedFileAttachments: FileUploads = [];
 				if (decryptedFileUploads.length > 0) {
@@ -294,21 +279,21 @@ export default function Chat() {
 				}
 
 				const newMessage: Message = {
-					id: data.message_id ?? -1,
-					sender_id: data.sender_id,
-					receiver_id: data.receiver_id,
-					content: decryptedContent,
-					status: "received",
-					expires_at: new Date().toISOString(),
-					aes_key_receiver: data.aes_key_receiver,
-					aes_key_sender: data.aes_key_sender,
-					file_attachments: parsedFileAttachments,
+					id: data.messageId ?? -1,
+					senderId: data.senderId,
+					receiverId: data.receiverId,
+					body: decryptedContent,
+					state: "received",
+					expiredAt: new Date().toISOString(),
+					aesKeyReceiver: data.aesKeyReceiver,
+					aesKeySender: data.aesKeySender,
+					fileAttachments: parsedFileAttachments,
 				};
 
 				setMessages((prev) => [...prev, newMessage]);
 
-				if (data.message_id) {
-					sendStatusUpdate(data.message_id, "received");
+				if (data.messageId) {
+					sendStatusUpdate(data.messageId, "received");
 				}
 			} catch (error) {
 				console.error("Error processing new message:", error);
@@ -323,11 +308,11 @@ export default function Chat() {
 	);
 
 	const handleStatusUpdate = useCallback((data: WSMessage) => {
-		console.log("Status update:", data.status, data.message_id);
+		console.log("Status update:", data.state, data.messageId);
 		setMessages((prev) =>
 			prev.map((message) => {
-				if (message.id === data.message_id) {
-					return { ...message, status: data.status || "sent" };
+				if (message.id === data.messageId) {
+					return { ...message, state: data.state || "sent" };
 				}
 				return message;
 			}),
@@ -335,14 +320,14 @@ export default function Chat() {
 	}, []);
 
 	const handleMessageSent = useCallback((data: WSMessage) => {
-		console.log("Message sent:", data.status);
+		console.log("Message sent:", data.state);
 		setMessages((prev) =>
 			prev.map((message) =>
 				message.id === -1
 					? {
 							...message,
-							status: data.status || "sent",
-							id: data.message_id ?? -1,
+							status: data.state || "sent",
+							id: data.messageId ?? -1,
 						}
 					: message,
 			),
@@ -352,22 +337,22 @@ export default function Chat() {
 	useEffect(() => {
 		const token = localStorage.getItem("token");
 		const userId = localStorage.getItem("user_id");
-		const username = localStorage.getItem("username");
+		const nickname = localStorage.getItem("nickname");
 		const privateKey = localStorage.getItem(`private_key_${userId}`);
 		const publicKey = localStorage.getItem(`public_key_${userId}`);
 
-		if (!token || !userId || !username || !privateKey || !publicKey) {
+		if (!token || !userId || !nickname || !privateKey || !publicKey) {
 			router.push("/login");
 			return;
 		}
 
 		setToken(token);
 		setUserId(userId);
-		setUsername(username);
+		setNickname(nickname);
 		setPrivateKey(privateKey);
 		setPublicKey(publicKey);
 
-		const websocket = new WebSocket(`ws://localhost:8080/ws?token=${token}`);
+		const websocket = new WebSocket(`ws://localhost:8000/ws?token=${token}`);
 		wsRef.current = websocket;
 
 		websocket.onopen = () => {
@@ -376,9 +361,11 @@ export default function Chat() {
 		};
 
 		websocket.onmessage = async (event) => {
+			console.log("WebSocket message received:", event.data);
 			const { data, success } = WSMessageSchema.safeParse(
 				JSON.parse(event.data),
 			);
+			console.log("WebSocket message received:", data);
 			if (success) {
 				switch (data.type) {
 					case "new_message":
@@ -389,11 +376,6 @@ export default function Chat() {
 						break;
 					case "status_update":
 						handleStatusUpdate(data);
-						break;
-					case "rtc_signal":
-						if (data.rtc_signal) {
-							handleWebRTCSignal(data.rtc_signal);
-						}
 						break;
 					default:
 						console.log("Unknown message type:", data.type);
@@ -444,6 +426,9 @@ export default function Chat() {
 		const expiresAt = tomorrow.toISOString();
 
 		try {
+			console.log(partnerPublicKey);
+			console.log(publicKey);
+			console.log(newMessage);
 			const {
 				encryptedMessage,
 				encryptedAESKeyReceiver,
@@ -459,12 +444,12 @@ export default function Chat() {
 			if (wsRef.current?.readyState === WebSocket.OPEN) {
 				const messageToSend = JSON.stringify({
 					type: "message",
-					content: encryptedMessage,
-					receiver_id: Number(partnerId),
-					aes_key_sender: encryptedAESKeySender,
-					aes_key_receiver: encryptedAESKeyReceiver,
-					expires_at: expiresAt,
-					file_attachments: JSON.stringify(encryptedFilesUploads),
+					body: encryptedMessage,
+					receiverId: Number(partnerId),
+					aesKeySender: encryptedAESKeySender,
+					aesKeyReceiver: encryptedAESKeyReceiver,
+					expiredAt: expiresAt,
+					fileAttachments: JSON.stringify(encryptedFilesUploads),
 				});
 				console.log("Message to send:", messageToSend);
 
@@ -472,14 +457,14 @@ export default function Chat() {
 
 				const message: Message = {
 					id: -1, // Temporary ID
-					sender_id: Number(userId),
-					content: newMessage,
-					status: "sent",
-					receiver_id: Number(partnerId),
-					aes_key_sender: encryptedAESKeySender,
-					aes_key_receiver: encryptedAESKeyReceiver,
-					expires_at: expiresAt,
-					file_attachments: fileUploads,
+					senderId: Number(userId),
+					body: newMessage,
+					state: "sent",
+					receiverId: Number(partnerId),
+					aesKeySender: encryptedAESKeySender,
+					aesKeyReceiver: encryptedAESKeyReceiver,
+					expiredAt: expiresAt,
+					fileAttachments: fileUploads,
 				};
 
 				setMessages((prev) => [...prev, message]);
@@ -523,21 +508,19 @@ export default function Chat() {
 		files.forEach((file) => formData.append("files", file));
 
 		try {
-			const response = await fetch(
-				"http://localhost:8080/api/upload-multiple",
-				{
-					method: "POST",
-					headers: { Authorization: `Bearer ${token}` },
-					body: formData,
-				},
-			);
+			const response = await fetch("http://localhost:8000/api/upload-files", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}` },
+				body: formData,
+			});
 
 			if (!response.ok) {
 				throw new Error("File upload failed");
 			}
 
 			const result = await response.json();
-			const { data, success } = FileUploadsSchema.safeParse(result.files);
+			console.log("File upload result:", result);
+			const { data, success } = FileUploadsSchema.safeParse(result);
 			if (!success) {
 				throw new Error("Failed to parse file uploads");
 			}
@@ -551,29 +534,6 @@ export default function Chat() {
 			});
 		}
 	};
-
-	const initializePeerConnection = useCallback(() => {
-		const pc = new RTCPeerConnection({
-			iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-		});
-
-		pc.onicecandidate = (event) => {
-			if (event.candidate) {
-				sendWebRTCSignal({
-					type: "ice_candidate",
-					candidate: event.candidate.candidate,
-					sdpMLineIndex: event.candidate.sdpMLineIndex,
-					sdpMid: event.candidate.sdpMid,
-				});
-			}
-		};
-
-		pc.ontrack = (event) => {
-			setRemoteStream(event.streams[0]);
-		};
-
-		peerConnection.current = pc;
-	}, []);
 
 	const startCall = useCallback(async () => {
 		try {
@@ -589,8 +549,6 @@ export default function Chat() {
 				localVideoRef.current.srcObject = stream;
 			}
 
-			initializePeerConnection();
-
 			if (peerConnection.current) {
 				// biome-ignore lint/complexity/noForEach: <explanation>
 				stream.getTracks().forEach((track) => {
@@ -599,13 +557,6 @@ export default function Chat() {
 
 				const offer = await peerConnection.current.createOffer();
 				await peerConnection.current.setLocalDescription(offer);
-
-				sendWebRTCSignal({
-					type: "offer",
-					sdp: offer.sdp,
-					sender_id: Number(userId),
-					receiver_id: Number(partnerId),
-				});
 			}
 
 			setIsCallActive(true);
@@ -617,7 +568,7 @@ export default function Chat() {
 				variant: "destructive",
 			});
 		}
-	}, [initializePeerConnection, toast, isVideoEnabled, partnerId, userId]);
+	}, [toast, isVideoEnabled]);
 
 	const endCall = useCallback(() => {
 		if (peerConnection.current) {
@@ -632,96 +583,6 @@ export default function Chat() {
 		setIsCallActive(false);
 	}, [localStream]);
 
-	const handleIncomingCall = useCallback(
-		async (offer: RTCSessionDescriptionInit) => {
-			try {
-				const constraints = {
-					audio: true,
-					video: isVideoEnabled,
-				};
-
-				const stream = await navigator.mediaDevices.getUserMedia(constraints);
-				setLocalStream(stream);
-
-				if (localVideoRef.current) {
-					localVideoRef.current.srcObject = stream;
-				}
-
-				initializePeerConnection();
-
-				if (peerConnection.current) {
-					await peerConnection.current.setRemoteDescription(offer);
-
-					// biome-ignore lint/complexity/noForEach: <explanation>
-					stream.getTracks().forEach((track) => {
-						peerConnection.current?.addTrack(track, stream);
-					});
-
-					const answer = await peerConnection.current.createAnswer();
-					await peerConnection.current.setLocalDescription(answer);
-
-					sendWebRTCSignal({
-						type: "answer",
-						sdp: answer.sdp,
-					});
-				}
-
-				setIsCallActive(true);
-			} catch (error) {
-				console.error("Error handling incoming call:", error);
-				toast({
-					title: "Error",
-					description: "Failed to answer call. Please try again.",
-					variant: "destructive",
-				});
-			}
-		},
-		[initializePeerConnection, toast, isVideoEnabled],
-	);
-
-	const handleWebRTCSignal = useCallback(
-		(signal: z.infer<typeof RTCSignalSchema>) => {
-			if (!peerConnection.current) {
-				initializePeerConnection();
-			}
-
-			switch (signal.type) {
-				case "offer":
-					handleIncomingCall({ type: "offer", sdp: signal.sdp });
-					break;
-				case "answer":
-					peerConnection.current?.setRemoteDescription({
-						type: "answer",
-						sdp: signal.sdp,
-					});
-					break;
-				case "ice_candidate":
-					peerConnection.current?.addIceCandidate({
-						candidate: signal.candidate,
-						sdpMLineIndex: signal.sdpMLineIndex,
-						sdpMid: signal.sdpMid,
-					});
-					break;
-			}
-		},
-		[handleIncomingCall, initializePeerConnection],
-	);
-
-	const sendWebRTCSignal = useCallback(
-		(signal: z.infer<typeof RTCSignalSchema>) => {
-			if (wsRef.current?.readyState === WebSocket.OPEN) {
-				wsRef.current.send(
-					JSON.stringify({
-						type: "rtc_signal",
-						receiver_id: Number(partnerId),
-						rtc_signal: signal,
-					}),
-				);
-			}
-		},
-		[partnerId],
-	);
-
 	useEffect(() => {
 		if (remoteVideoRef.current && remoteStream) {
 			remoteVideoRef.current.srcObject = remoteStream;
@@ -731,24 +592,24 @@ export default function Chat() {
 	return (
 		<div className="flex flex-col h-screen p-4">
 			<h1 className="text-2xl text-center font-bold mb-4">
-				Chat of {username}
+				Chat of {nickname}
 			</h1>
 			<div className="flex-1 overflow-y-auto mb-4 space-y-2">
 				{messages?.map((message) => (
 					<div
-						key={`${message.id} - ${message.content}`}
+						key={`${message.id} - ${message.body}`}
 						className={`p-2 rounded-lg mx-auto bg-gray-200 max-w-md ${
-							message.sender_id === Number(userId)
+							message.senderId === Number(userId)
 								? "ml-auto bg-blue-200"
 								: "mr-auto"
 						}`}
 					>
 						<p>{`${
-							message.sender_id === Number(userId) ? "You" : "Partner"
-						}: ${message.content}`}</p>
-						<p className="text-xs text-gray-500">{message.status}</p>
-						{message.file_attachments?.map((file: FileUpload) => (
-							<FileInfo key={file.file_name} fileInfo={file} />
+							message.senderId === Number(userId) ? "You" : "Partner"
+						}: ${message.body}`}</p>
+						<p className="text-xs text-gray-500">{message.state}</p>
+						{message.fileAttachments?.map((file: FileUpload) => (
+							<FileInfo key={file.fileName} fileInfo={file} />
 						))}
 					</div>
 				))}
@@ -837,7 +698,7 @@ export default function Chat() {
 					<div className="mt-2">
 						<p>Attached files:</p>
 						{fileUploads.map((file) => (
-							<FileInfo key={file.file_name} fileInfo={file} />
+							<FileInfo key={file.fileName} fileInfo={file} />
 						))}
 					</div>
 				)}

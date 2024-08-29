@@ -8,12 +8,11 @@ import { useState } from "react";
 import { z } from "zod";
 
 const RegisterDataSchema = z.object({
-	user_id: z.number(),
+	id: z.number(),
 });
 
 export default function Register() {
-	const [username, setUsername] = useState("");
-	const [password, setPassword] = useState("");
+	const [nickname, setNickname] = useState("");
 	const router = useRouter();
 	const { toast } = useToast();
 
@@ -24,14 +23,13 @@ export default function Register() {
 				(res) => res.json(),
 			);
 			// console.log(publicKey, privateKey);
-			const response = await fetch("http://localhost:8080/api/register", {
+			const response = await fetch("http://localhost:8000/register", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					username,
-					password,
-					public_key: publicKey,
-					private_key: privateKey,
+					nickname,
+					publicKey,
+					privateKey,
 				}),
 			});
 
@@ -39,9 +37,9 @@ export default function Register() {
 				const responseData = await response.json();
 				const { data, success } = RegisterDataSchema.safeParse(responseData);
 				if (success) {
-					const { user_id } = data;
+					const { id } = data;
 					// console.log(user_id);
-					if (user_id) {
+					if (id) {
 						toast({
 							title: "Registration successful",
 							description: "Please login with your new account",
@@ -82,16 +80,9 @@ export default function Register() {
 			<form onSubmit={handleSubmit} className="space-y-4 w-full max-w-md">
 				<Input
 					type="text"
-					placeholder="Username"
-					value={username}
-					onChange={(e) => setUsername(e.target.value)}
-					required
-				/>
-				<Input
-					type="password"
-					placeholder="Password"
-					value={password}
-					onChange={(e) => setPassword(e.target.value)}
+					placeholder="Nickname"
+					value={nickname}
+					onChange={(e) => setNickname(e.target.value)}
 					required
 				/>
 				<Button type="submit" className="w-full">

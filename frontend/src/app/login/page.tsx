@@ -9,54 +9,46 @@ import { useState } from "react";
 import { z } from "zod";
 
 const loginDataSchema = z.object({
-	user_id: z.number(),
-	username: z.string(),
+	id: z.number(),
+	nickname: z.string(),
 	token: z.string(),
-	private_key: z.string(),
-	public_key: z.string(),
+	privateKey: z.string(),
+	publicKey: z.string(),
 });
 
-interface LoginData {
-	user_id: number;
-	username: string;
-	token: string;
-	private_key: string;
-	public_key: string;
-}
-
 export default function Login() {
-	const [username, setUsername] = useState("");
-	const [password, setPassword] = useState("");
+	const [nickname, setNickname] = useState("");
 	const router = useRouter();
 	const { toast } = useToast();
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const response = await fetch("http://localhost:8080/api/login", {
+			const response = await fetch("http://localhost:8000/login", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ username, password }),
+				body: JSON.stringify({ nickname }),
 			});
 			const jsonData = await response.json();
+			console.log(jsonData);
 			const { data, success } = loginDataSchema.safeParse(jsonData);
 			if (success) {
 				localStorage.setItem("token", data.token);
-				localStorage.setItem("user_id", data.user_id.toString());
-				localStorage.setItem("username", data.username);
-				localStorage.setItem(`private_key_${data.user_id}`, data.private_key);
-				localStorage.setItem(`public_key_${data.user_id}`, data.public_key);
+				localStorage.setItem("user_id", data.id.toString());
+				localStorage.setItem("nickname", data.nickname);
+				localStorage.setItem(`private_key_${data.id}`, data.privateKey);
+				localStorage.setItem(`public_key_${data.id}`, data.publicKey);
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",
 				});
 				router.push("/chat");
-				return;
+			} else {
+				toast({
+					title: "Login failed",
+					description: "Invalid credentials",
+				});
 			}
-			toast({
-				title: "Login failed",
-				description: "Invalid credentials",
-			});
 		} catch (error) {
 			console.error(error);
 			toast({
@@ -72,16 +64,9 @@ export default function Login() {
 			<form onSubmit={handleSubmit} className="space-y-4 w-full max-w-md">
 				<Input
 					type="text"
-					placeholder="Username"
-					value={username}
-					onChange={(e) => setUsername(e.target.value)}
-					required
-				/>
-				<Input
-					type="password"
-					placeholder="Password"
-					value={password}
-					onChange={(e) => setPassword(e.target.value)}
+					placeholder="Nickname"
+					value={nickname}
+					onChange={(e) => setNickname(e.target.value)}
 					required
 				/>
 				<Button type="submit" className="w-full">

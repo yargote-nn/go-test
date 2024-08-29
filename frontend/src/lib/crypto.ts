@@ -4,10 +4,10 @@ import crypto from "crypto";
 import { z } from "zod";
 
 const FileUploadSchema = z.object({
-	file_name: z.string(),
-	file_size: z.number(),
-	file_type: z.string(),
-	file_url: z.string(),
+	fileName: z.string(),
+	fileSize: z.number(),
+	fileType: z.string(),
+	fileUrl: z.string(),
 });
 
 const FileUploadsSchema = z.array(FileUploadSchema);
@@ -96,18 +96,17 @@ async function encryptMessage(
 
 		// Encrypt file uploads with AES key
 		const encryptedFileUploads = fileUploads.map((fileUpload) => {
-			const iv = crypto.randomBytes(16);
 			const encryptedFileUploadURL = encryptString(
-				fileUpload.file_url,
+				fileUpload.fileUrl,
 				aesKey,
 				iv,
 			);
 
 			return {
-				file_name: fileUpload.file_name,
-				file_size: fileUpload.file_size,
-				file_type: fileUpload.file_type,
-				file_url: encryptedFileUploadURL,
+				fileName: fileUpload.fileName,
+				fileSize: fileUpload.fileSize,
+				fileType: fileUpload.fileType,
+				fileUrl: encryptedFileUploadURL,
 			};
 		});
 
@@ -165,13 +164,13 @@ async function decryptMessage(
 		}
 		// Decrypt url from file uploads
 		decryptedFileUploads = parsedFileUploads.map((fileUpload) => {
-			const decryptedFileUploadURL = decryptString(fileUpload.file_url, aesKey);
+			const decryptedFileUploadURL = decryptString(fileUpload.fileUrl, aesKey);
 
 			return {
-				file_name: fileUpload.file_name,
-				file_size: fileUpload.file_size,
-				file_type: fileUpload.file_type,
-				file_url: decryptedFileUploadURL,
+				fileName: fileUpload.fileName,
+				fileSize: fileUpload.fileSize,
+				fileType: fileUpload.fileType,
+				fileUrl: decryptedFileUploadURL,
 			};
 		});
 
