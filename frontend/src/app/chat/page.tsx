@@ -1,12 +1,23 @@
 "use client";
 
 import { FileInfo } from "@/components/file-info";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { encryptMessage } from "@/lib/crypto";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Peer from "simple-peer";
 import { z } from "zod";
 
 const UserSchema = z.object({
@@ -61,6 +72,18 @@ const MessageResponseSchema = z.array(MessageSchema);
 
 type MessageResponse = z.infer<typeof MessageResponseSchema>;
 
+const SignalMessageSchema = z.object({
+	type: z.union([
+		z.literal("signal"),
+		z.literal("video-call"),
+		z.literal("end"),
+	]),
+	signal: z.any().nullable(),
+	from: z.string().optional(),
+});
+
+type SignalMessage = z.infer<typeof SignalMessageSchema>;
+
 export default function Chat() {
 	const [nickname, setNickname] = useState("");
 	const [messages, setMessages] = useState<MessageResponse>([]);
@@ -75,16 +98,21 @@ export default function Chat() {
 	const router = useRouter();
 	const { toast } = useToast();
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+
 	const wsRef = useRef<WebSocket | null>(null);
-
-	const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-	const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-	const [isCallActive, setIsCallActive] = useState(false);
-	const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-	const peerConnection = useRef<RTCPeerConnection | null>(null);
-	const localVideoRef = useRef<HTMLVideoElement>(null);
+	const remoteAudioRef = useRef<HTMLAudioElement>(null);
 	const remoteVideoRef = useRef<HTMLVideoElement>(null);
+	const socketCallRef = useRef<WebSocket | null>(null);
 
+	const [isAlertOpen, setIsAlertOpen] = useState(false);
+	const [pendingCallMessage, setPendingCallMessage] =
+		useState<SignalMessage | null>(null);
+
+	const [peerConnection, setPeerConnection] = useState<Peer.Instance | null>(
+		null,
+	);
+	const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+	const [isVideoCall, setIsVideoCall] = useState<boolean>(false);
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
 
 	const sendStatusUpdate = useCallback((messageId: number, state: string) => {
@@ -393,10 +421,183 @@ export default function Chat() {
 			setIsWebSocketReady(false);
 		};
 
+		setupSignaling();
+
 		return () => {
-			websocket.close();
+			if (websocket) websocket.close();
+			if (socketCallRef.current) socketCallRef.current.close();
 		};
 	}, [router, handleNewMessage, handleStatusUpdate, handleMessageSent]);
+
+	const setupSignaling = () => {
+		socketCallRef.current = new WebSocket(
+			`ws://localhost:8000/ws/webrtc?token=${token}`,
+		);
+		socketCallRef.current.onopen = () =>
+			console.log("WebSocket call connection established");
+		socketCallRef.current.onmessage = (event) => {
+			const message = JSON.parse(event.data);
+			console.log("WebSocket call message received:", message);
+			if (
+				(message.type === "signal" || message.type === "video-call") &&
+				message.signal
+			) {
+				if (peerConnection) {
+					peerConnection.signal(message.signal);
+				} else {
+					message.type === "video-call"
+						? handleIncomingVideoCall(message)
+						: handleIncomingCall(message);
+				}
+			}
+			if (message.type === "end") {
+				console.log("Ending call");
+				endCall();
+			}
+		};
+	};
+
+	const startCall = async (isVideo = false): Promise<void> => {
+		try {
+			setIsVideoCall(isVideo);
+			const stream = await navigator.mediaDevices.getUserMedia({
+				audio: true,
+				video: isVideo,
+			});
+			setLocalStream(stream);
+			const peer = new Peer({ initiator: true, stream, trickle: false });
+
+			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+			peer.on("signal", (data: any) => {
+				sendSignalingMessage({
+					type: isVideo ? "video-call" : "signal",
+					signal: data,
+					to: partnerId,
+				});
+			});
+
+			peer.on("stream", (stream: MediaStream) => {
+				if (isVideo && remoteVideoRef.current) {
+					remoteVideoRef.current.srcObject = stream;
+					remoteVideoRef.current.style.display = "block";
+					if (remoteAudioRef.current)
+						remoteAudioRef.current.style.display = "none";
+				} else if (remoteAudioRef.current) {
+					remoteAudioRef.current.srcObject = stream;
+				}
+			});
+
+			setPeerConnection(peer);
+		} catch (error) {
+			console.error("Error in startCall:", error);
+		}
+	};
+
+	const endCall = (): void => {
+		if (peerConnection) {
+			sendSignalingMessage({
+				type: "end",
+				signal: null,
+				to: partnerId,
+			});
+			peerConnection.destroy();
+			setPeerConnection(null);
+		}
+		if (localStream) {
+			// biome-ignore lint/complexity/noForEach: <explanation>
+			localStream.getTracks().forEach((track) => track.stop());
+			setLocalStream(null);
+		}
+		if (remoteAudioRef.current) remoteAudioRef.current.style.display = "block";
+		if (remoteVideoRef.current) remoteVideoRef.current.style.display = "none";
+		setIsVideoCall(false);
+	};
+	const getMedia = async (
+		message: SignalMessage,
+		isVideo: boolean,
+	): Promise<void> => {
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({
+				audio: true,
+				video: isVideo,
+			});
+			setLocalStream(stream);
+			setIsVideoCall(isVideo);
+
+			const peer = new Peer({ initiator: false, stream, trickle: false });
+
+			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+			peer.on("signal", (data: any) => {
+				sendSignalingMessage({
+					type: "accept-call",
+					signal: data,
+					to: message.from,
+				});
+			});
+
+			peer.on("stream", (remoteStream: MediaStream) => {
+				if (isVideo && remoteVideoRef.current) {
+					remoteVideoRef.current.srcObject = remoteStream;
+					remoteVideoRef.current.style.display = "block";
+					if (remoteAudioRef.current)
+						remoteAudioRef.current.style.display = "none";
+				} else if (remoteAudioRef.current) {
+					remoteAudioRef.current.srcObject = remoteStream;
+				}
+			});
+
+			if (message.signal) {
+				peer.signal(message.signal);
+			}
+
+			setPeerConnection(peer);
+		} catch (error) {
+			console.error("Error accessing media devices:", error);
+		}
+	};
+
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	const sendSignalingMessage = (message: any) => {
+		if (socketCallRef.current?.readyState === WebSocket.OPEN) {
+			socketCallRef.current.send(JSON.stringify(message));
+		} else {
+			console.error("WebSocket for call is not open");
+		}
+	};
+
+	const handleIncomingCall = async (message: SignalMessage) => {
+		console.log("Incoming call:", message);
+		setPendingCallMessage(message);
+		setIsAlertOpen(true);
+	};
+
+	const handleAcceptCall = async () => {
+		setIsAlertOpen(false);
+		if (pendingCallMessage) {
+			await getMedia(
+				pendingCallMessage,
+				pendingCallMessage.type === "video-call",
+			);
+		}
+		setPendingCallMessage(null);
+	};
+
+	const handleDeclineCall = () => {
+		setIsAlertOpen(false);
+		if (pendingCallMessage) {
+			sendSignalingMessage({
+				type: "decline-call",
+				signal: null,
+				to: pendingCallMessage.from,
+			});
+		}
+		setPendingCallMessage(null);
+	};
+
+	const handleIncomingVideoCall = async (message: SignalMessage) => {
+		setPendingCallMessage(message);
+		setIsAlertOpen(true);
+	};
 
 	// useEffect(() => {
 	// 	messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -535,60 +736,6 @@ export default function Chat() {
 		}
 	};
 
-	const startCall = useCallback(async () => {
-		try {
-			const constraints = {
-				audio: true,
-				video: isVideoEnabled,
-			};
-
-			const stream = await navigator.mediaDevices.getUserMedia(constraints);
-			setLocalStream(stream);
-
-			if (localVideoRef.current) {
-				localVideoRef.current.srcObject = stream;
-			}
-
-			if (peerConnection.current) {
-				// biome-ignore lint/complexity/noForEach: <explanation>
-				stream.getTracks().forEach((track) => {
-					peerConnection.current?.addTrack(track, stream);
-				});
-
-				const offer = await peerConnection.current.createOffer();
-				await peerConnection.current.setLocalDescription(offer);
-			}
-
-			setIsCallActive(true);
-		} catch (error) {
-			console.error("Error starting call:", error);
-			toast({
-				title: "Error",
-				description: "Failed to start call. Please try again.",
-				variant: "destructive",
-			});
-		}
-	}, [toast, isVideoEnabled]);
-
-	const endCall = useCallback(() => {
-		if (peerConnection.current) {
-			peerConnection.current.close();
-		}
-		if (localStream) {
-			// biome-ignore lint/complexity/noForEach: <explanation>
-			localStream.getTracks().forEach((track) => track.stop());
-		}
-		setLocalStream(null);
-		setRemoteStream(null);
-		setIsCallActive(false);
-	}, [localStream]);
-
-	useEffect(() => {
-		if (remoteVideoRef.current && remoteStream) {
-			remoteVideoRef.current.srcObject = remoteStream;
-		}
-	}, [remoteStream]);
-
 	return (
 		<div className="flex flex-col h-screen p-4">
 			<h1 className="text-2xl text-center font-bold mb-4">
@@ -615,58 +762,35 @@ export default function Chat() {
 				))}
 				<div ref={messagesEndRef} />
 			</div>
-			<div className="mb-4">
-				{isCallActive ? (
-					<div className="flex space-x-2">
-						<div className="w-1/2">
-							{isVideoEnabled ? (
-								<video
-									ref={localVideoRef}
-									autoPlay
-									muted
-									playsInline
-									className="w-full"
-								/>
-							) : (
-								<div className="w-full h-40 bg-gray-200 flex items-center justify-center">
-									Audio Only (You)
-								</div>
-							)}
-						</div>
-						<div className="w-1/2">
-							{isVideoEnabled ? (
-								// biome-ignore lint/a11y/useMediaCaption: <explanation>
-								<video
-									ref={remoteVideoRef}
-									autoPlay
-									playsInline
-									className="w-full"
-								/>
-							) : (
-								<div className="w-full h-40 bg-gray-200 flex items-center justify-center">
-									Audio Only (Partner)
-								</div>
-							)}
-						</div>
-					</div>
-				) : null}
-				<div className="flex justify-center mt-2 space-x-2">
-					{isCallActive ? (
-						<Button onClick={endCall} className="bg-red-500 hover:bg-red-600">
-							End Call
-						</Button>
-					) : (
-						<>
-							<Button onClick={startCall}>Start Call</Button>
-							<Button
-								onClick={() => setIsVideoEnabled(!isVideoEnabled)}
-								className={isVideoEnabled ? "bg-blue-500" : "bg-gray-500"}
-							>
-								{isVideoEnabled ? "Video On" : "Video Off"}
-							</Button>
-						</>
-					)}
-				</div>
+			<AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Incoming Call</AlertDialogTitle>
+						<AlertDialogDescription>
+							{pendingCallMessage?.type === "video-call"
+								? "Video call"
+								: "Audio call"}{" "}
+							incoming. Do you want to accept?
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel onClick={handleDeclineCall}>
+							Decline
+						</AlertDialogCancel>
+						<AlertDialogAction onClick={handleAcceptCall}>
+							Accept
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+			<div className="flex gap-2 justify-center mb-2">
+				<Button onClick={() => startCall(false)}>Call</Button>
+				<Button onClick={() => startCall(true)}>Video Call</Button>
+				<Button onClick={endCall}>End Call</Button>
+				{/* biome-ignore lint/a11y/useMediaCaption: <explanation> */}
+				<audio ref={remoteAudioRef} autoPlay />
+				{/* biome-ignore lint/a11y/useMediaCaption: <explanation> */}
+				<video ref={remoteVideoRef} autoPlay style={{ display: "none" }} />
 			</div>
 			<form onSubmit={sendMessage} className="space-y-2">
 				<div className="flex space-x-2">
