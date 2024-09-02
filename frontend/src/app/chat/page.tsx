@@ -133,7 +133,7 @@ export default function Chat() {
 		const fetchPartnerInfo = async () => {
 			try {
 				const response = await fetch(
-					`http://localhost:8000/api/users/${partnerId}`,
+					`http://192.168.1.6:8000/api/users/${partnerId}`,
 					{
 						headers: { Authorization: `Bearer ${token}` },
 					},
@@ -167,7 +167,7 @@ export default function Chat() {
 		const fetchMessages = async () => {
 			try {
 				const response = await fetch(
-					`http://localhost:8000/api/messages?partner_id=${partnerId}`,
+					`http://192.168.1.6:8000/api/messages?partner_id=${partnerId}`,
 					{
 						headers: { Authorization: `Bearer ${token}` },
 					},
@@ -373,14 +373,13 @@ export default function Chat() {
 			router.push("/login");
 			return;
 		}
-
 		setToken(token);
 		setUserId(userId);
 		setNickname(nickname);
 		setPrivateKey(privateKey);
 		setPublicKey(publicKey);
 
-		const websocket = new WebSocket(`ws://localhost:8000/ws?token=${token}`);
+		const websocket = new WebSocket(`ws://192.168.1.6:8000/ws?token=${token}`);
 		wsRef.current = websocket;
 
 		websocket.onopen = () => {
@@ -421,7 +420,7 @@ export default function Chat() {
 			setIsWebSocketReady(false);
 		};
 
-		setupSignaling();
+		setupSignaling(token);
 
 		return () => {
 			if (websocket) websocket.close();
@@ -429,9 +428,9 @@ export default function Chat() {
 		};
 	}, [router, handleNewMessage, handleStatusUpdate, handleMessageSent]);
 
-	const setupSignaling = () => {
+	const setupSignaling = (token: string) => {
 		socketCallRef.current = new WebSocket(
-			`ws://localhost:8000/ws/webrtc?token=${token}`,
+			`ws://192.168.1.6:8000/ws/webrtc?token=${token}`,
 		);
 		socketCallRef.current.onopen = () =>
 			console.log("WebSocket call connection established");
@@ -709,7 +708,7 @@ export default function Chat() {
 		files.forEach((file) => formData.append("files", file));
 
 		try {
-			const response = await fetch("http://localhost:8000/api/upload-files", {
+			const response = await fetch("http://192.168.1.6:8000/api/upload-files", {
 				method: "POST",
 				headers: { Authorization: `Bearer ${token}` },
 				body: formData,
