@@ -422,6 +422,10 @@ export default function Chat() {
 
 		setupSignaling(token);
 
+		if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+			console.error("getUserMedia is not supported in this browser");
+		}
+
 		return () => {
 			if (websocket) websocket.close();
 			if (socketCallRef.current) socketCallRef.current.close();
@@ -456,8 +460,28 @@ export default function Chat() {
 		};
 	};
 
+	const checkAndRequestPermissions = async (isVideo: boolean) => {
+		try {
+			await navigator.mediaDevices.getUserMedia({
+				audio: true,
+				video: isVideo,
+			});
+			console.log("Permissions granted");
+		} catch (error) {
+			console.error("Error requesting permissions:", error);
+			toast({
+				title: "Permission Error",
+				description:
+					"Please grant microphone and camera permissions to use this feature.",
+				variant: "destructive",
+			});
+			throw error;
+		}
+	};
+
 	const startCall = async (isVideo = false): Promise<void> => {
 		try {
+			await checkAndRequestPermissions(isVideo);
 			setIsVideoCall(isVideo);
 			const stream = await navigator.mediaDevices.getUserMedia({
 				audio: true,
@@ -468,6 +492,7 @@ export default function Chat() {
 
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 			peer.on("signal", (data: any) => {
+				console.log("Signal received:", data);
 				sendSignalingMessage({
 					type: isVideo ? "video-call" : "signal",
 					signal: data,
@@ -542,6 +567,7 @@ export default function Chat() {
 						remoteAudioRef.current.style.display = "none";
 				} else if (remoteAudioRef.current) {
 					remoteAudioRef.current.srcObject = remoteStream;
+					remoteAudioRef.current.style.display = "block";
 				}
 			});
 
@@ -552,6 +578,12 @@ export default function Chat() {
 			setPeerConnection(peer);
 		} catch (error) {
 			console.error("Error accessing media devices:", error);
+			toast({
+				title: "Error",
+				description:
+					"Failed to access microphone. Please check your permissions.",
+				variant: "destructive",
+			});
 		}
 	};
 
@@ -573,10 +605,22 @@ export default function Chat() {
 	const handleAcceptCall = async () => {
 		setIsAlertOpen(false);
 		if (pendingCallMessage) {
-			await getMedia(
-				pendingCallMessage,
-				pendingCallMessage.type === "video-call",
-			);
+			try {
+				await checkAndRequestPermissions(
+					pendingCallMessage.type === "video-call",
+				);
+				await getMedia(
+					pendingCallMessage,
+					pendingCallMessage.type === "video-call",
+				);
+			} catch (error) {
+				console.error("Error handling accept call:", error);
+				toast({
+					title: "Error",
+					description: "Failed to start the call. Please try again.",
+					variant: "destructive",
+				});
+			}
 		}
 		setPendingCallMessage(null);
 	};
