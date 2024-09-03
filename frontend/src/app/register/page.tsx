@@ -23,7 +23,7 @@ export default function Register() {
 				(res) => res.json(),
 			);
 			// console.log(publicKey, privateKey);
-			const response = await fetch("http://192.168.1.6:8000/register", {
+			const response = await fetch("http://localhost:8000/register", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
