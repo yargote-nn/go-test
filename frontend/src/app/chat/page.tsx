@@ -1,23 +1,12 @@
 "use client";
 
 import { FileInfo } from "@/components/file-info";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { encryptMessage } from "@/lib/crypto";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Peer from "simple-peer";
 import { z } from "zod";
 
 const UserSchema = z.object({
@@ -72,18 +61,6 @@ const MessageResponseSchema = z.array(MessageSchema);
 
 type MessageResponse = z.infer<typeof MessageResponseSchema>;
 
-const SignalMessageSchema = z.object({
-	type: z.union([
-		z.literal("signal"),
-		z.literal("video-call"),
-		z.literal("end"),
-	]),
-	signal: z.any().nullable(),
-	from: z.string().optional(),
-});
-
-type SignalMessage = z.infer<typeof SignalMessageSchema>;
-
 export default function Chat() {
 	const [nickname, setNickname] = useState("");
 	const [messages, setMessages] = useState<MessageResponse>([]);
@@ -100,19 +77,8 @@ export default function Chat() {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 
 	const wsRef = useRef<WebSocket | null>(null);
-	const remoteAudioRef = useRef<HTMLAudioElement>(null);
-	const remoteVideoRef = useRef<HTMLVideoElement>(null);
 	const socketCallRef = useRef<WebSocket | null>(null);
 
-	const [isAlertOpen, setIsAlertOpen] = useState(false);
-	const [pendingCallMessage, setPendingCallMessage] =
-		useState<SignalMessage | null>(null);
-
-	const [peerConnection, setPeerConnection] = useState<Peer.Instance | null>(
-		null,
-	);
-	const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-	const [isVideoCall, setIsVideoCall] = useState<boolean>(false);
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
 
 	const sendStatusUpdate = useCallback((messageId: number, state: string) => {
@@ -420,8 +386,6 @@ export default function Chat() {
 			setIsWebSocketReady(false);
 		};
 
-		setupSignaling(token);
-
 		if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 			console.error("getUserMedia is not supported in this browser");
 		}
@@ -432,219 +396,9 @@ export default function Chat() {
 		};
 	}, [router, handleNewMessage, handleStatusUpdate, handleMessageSent]);
 
-	const setupSignaling = (token: string) => {
-		socketCallRef.current = new WebSocket(
-			`ws://localhost:8000/ws/webrtc?token=${token}`,
-		);
-		socketCallRef.current.onopen = () =>
-			console.log("WebSocket call connection established");
-		socketCallRef.current.onmessage = (event) => {
-			const message = JSON.parse(event.data);
-			console.log("WebSocket call message received:", message);
-			if (
-				(message.type === "signal" || message.type === "video-call") &&
-				message.signal
-			) {
-				if (peerConnection) {
-					peerConnection.signal(message.signal);
-				} else {
-					message.type === "video-call"
-						? handleIncomingVideoCall(message)
-						: handleIncomingCall(message);
-				}
-			}
-			if (message.type === "end") {
-				console.log("Ending call");
-				endCall();
-			}
-		};
-	};
-
-	const checkAndRequestPermissions = async (isVideo: boolean) => {
-		try {
-			await navigator.mediaDevices.getUserMedia({
-				audio: true,
-				video: isVideo,
-			});
-			console.log("Permissions granted");
-		} catch (error) {
-			console.error("Error requesting permissions:", error);
-			toast({
-				title: "Permission Error",
-				description:
-					"Please grant microphone and camera permissions to use this feature.",
-				variant: "destructive",
-			});
-			throw error;
-		}
-	};
-
-	const startCall = async (isVideo = false): Promise<void> => {
-		try {
-			await checkAndRequestPermissions(isVideo);
-			setIsVideoCall(isVideo);
-			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: true,
-				video: isVideo,
-			});
-			setLocalStream(stream);
-			const peer = new Peer({ initiator: true, stream, trickle: false });
-
-			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-			peer.on("signal", (data: any) => {
-				console.log("Signal received:", data);
-				sendSignalingMessage({
-					type: isVideo ? "video-call" : "signal",
-					signal: data,
-					to: partnerId,
-				});
-			});
-
-			peer.on("stream", (stream: MediaStream) => {
-				if (isVideo && remoteVideoRef.current) {
-					remoteVideoRef.current.srcObject = stream;
-					remoteVideoRef.current.style.display = "block";
-					if (remoteAudioRef.current)
-						remoteAudioRef.current.style.display = "none";
-				} else if (remoteAudioRef.current) {
-					remoteAudioRef.current.srcObject = stream;
-				}
-			});
-
-			setPeerConnection(peer);
-		} catch (error) {
-			console.error("Error in startCall:", error);
-		}
-	};
-
-	const endCall = (): void => {
-		if (peerConnection) {
-			sendSignalingMessage({
-				type: "end",
-				signal: null,
-				to: partnerId,
-			});
-			peerConnection.destroy();
-			setPeerConnection(null);
-		}
-		if (localStream) {
-			// biome-ignore lint/complexity/noForEach: <explanation>
-			localStream.getTracks().forEach((track) => track.stop());
-			setLocalStream(null);
-		}
-		if (remoteAudioRef.current) remoteAudioRef.current.style.display = "block";
-		if (remoteVideoRef.current) remoteVideoRef.current.style.display = "none";
-		setIsVideoCall(false);
-	};
-	const getMedia = async (
-		message: SignalMessage,
-		isVideo: boolean,
-	): Promise<void> => {
-		try {
-			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: true,
-				video: isVideo,
-			});
-			setLocalStream(stream);
-			setIsVideoCall(isVideo);
-
-			const peer = new Peer({ initiator: false, stream, trickle: false });
-
-			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-			peer.on("signal", (data: any) => {
-				sendSignalingMessage({
-					type: "accept-call",
-					signal: data,
-					to: message.from,
-				});
-			});
-
-			peer.on("stream", (remoteStream: MediaStream) => {
-				if (isVideo && remoteVideoRef.current) {
-					remoteVideoRef.current.srcObject = remoteStream;
-					remoteVideoRef.current.style.display = "block";
-					if (remoteAudioRef.current)
-						remoteAudioRef.current.style.display = "none";
-				} else if (remoteAudioRef.current) {
-					remoteAudioRef.current.srcObject = remoteStream;
-					remoteAudioRef.current.style.display = "block";
-				}
-			});
-
-			if (message.signal) {
-				peer.signal(message.signal);
-			}
-
-			setPeerConnection(peer);
-		} catch (error) {
-			console.error("Error accessing media devices:", error);
-			toast({
-				title: "Error",
-				description:
-					"Failed to access microphone. Please check your permissions.",
-				variant: "destructive",
-			});
-		}
-	};
-
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-	const sendSignalingMessage = (message: any) => {
-		if (socketCallRef.current?.readyState === WebSocket.OPEN) {
-			socketCallRef.current.send(JSON.stringify(message));
-		} else {
-			console.error("WebSocket for call is not open");
-		}
-	};
-
-	const handleIncomingCall = async (message: SignalMessage) => {
-		console.log("Incoming call:", message);
-		setPendingCallMessage(message);
-		setIsAlertOpen(true);
-	};
-
-	const handleAcceptCall = async () => {
-		setIsAlertOpen(false);
-		if (pendingCallMessage) {
-			try {
-				await checkAndRequestPermissions(
-					pendingCallMessage.type === "video-call",
-				);
-				await getMedia(
-					pendingCallMessage,
-					pendingCallMessage.type === "video-call",
-				);
-			} catch (error) {
-				console.error("Error handling accept call:", error);
-				toast({
-					title: "Error",
-					description: "Failed to start the call. Please try again.",
-					variant: "destructive",
-				});
-			}
-		}
-		setPendingCallMessage(null);
-	};
-
-	const handleDeclineCall = () => {
-		setIsAlertOpen(false);
-		if (pendingCallMessage) {
-			sendSignalingMessage({
-				type: "decline-call",
-				signal: null,
-				to: pendingCallMessage.from,
-			});
-		}
-		setPendingCallMessage(null);
-	};
-
-	const handleIncomingVideoCall = async (message: SignalMessage) => {
-		setPendingCallMessage(message);
-		setIsAlertOpen(true);
-	};
-
-	// useEffect(() => {
-	// 	messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	// }, []);
+	useEffect(() => {
+		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+	}, []);
 
 	const sendMessageCallback = useCallback(async () => {
 		if (!isWebSocketReady) {
@@ -804,36 +558,6 @@ export default function Chat() {
 					</div>
 				))}
 				<div ref={messagesEndRef} />
-			</div>
-			<AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Incoming Call</AlertDialogTitle>
-						<AlertDialogDescription>
-							{pendingCallMessage?.type === "video-call"
-								? "Video call"
-								: "Audio call"}{" "}
-							incoming. Do you want to accept?
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel onClick={handleDeclineCall}>
-							Decline
-						</AlertDialogCancel>
-						<AlertDialogAction onClick={handleAcceptCall}>
-							Accept
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
-			<div className="flex gap-2 justify-center mb-2">
-				<Button onClick={() => startCall(false)}>Call</Button>
-				<Button onClick={() => startCall(true)}>Video Call</Button>
-				<Button onClick={endCall}>End Call</Button>
-				{/* biome-ignore lint/a11y/useMediaCaption: <explanation> */}
-				<audio ref={remoteAudioRef} autoPlay />
-				{/* biome-ignore lint/a11y/useMediaCaption: <explanation> */}
-				<video ref={remoteVideoRef} autoPlay style={{ display: "none" }} />
 			</div>
 			<form onSubmit={sendMessage} className="space-y-2">
 				<div className="flex space-x-2">
