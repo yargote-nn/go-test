@@ -3,18 +3,19 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Phone, Video, X } from "lucide-react";
+import { Mic, Phone, Video, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Peer from "simple-peer";
 
 type CallStatus = "idle" | "calling" | "incomingCall" | "connected";
+type MediaType = "video" | "audio";
 
 export default function Calls() {
 	const [userId, setUserId] = useState("");
 	const [targetId, setTargetId] = useState("");
 	const [callStatus, setCallStatus] = useState<CallStatus>("idle");
-	const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+	const [mediaType, setMediaType] = useState<MediaType>("video");
 	const [incomingCallFrom, setIncomingCallFrom] = useState("");
 	const [token, setToken] = useState("");
 	const [signal, setSignal] = useState("");
@@ -23,6 +24,7 @@ export default function Calls() {
 	const peerRef = useRef<Peer.Instance | null>(null);
 	const localVideoRef = useRef<HTMLVideoElement>(null);
 	const remoteVideoRef = useRef<HTMLVideoElement>(null);
+	const streamRef = useRef<MediaStream | null>(null);
 
 	const router = useRouter();
 
@@ -81,8 +83,9 @@ export default function Calls() {
 
 	const startCall = (isAccepting = false) => {
 		navigator.mediaDevices
-			.getUserMedia({ video: isVideoEnabled, audio: true })
+			.getUserMedia({ video: mediaType === "video", audio: true })
 			.then((stream) => {
+				streamRef.current = stream;
 				if (localVideoRef.current) {
 					localVideoRef.current.srcObject = stream;
 				}
@@ -121,7 +124,6 @@ export default function Calls() {
 	};
 
 	const declineCall = () => {
-		console.log("Declining call", incomingCallFrom);
 		sendMessage({
 			type: "end",
 			to: incomingCallFrom,
@@ -135,23 +137,9 @@ export default function Calls() {
 		if (peerRef.current) {
 			peerRef.current.destroy();
 		}
-		if (
-			localVideoRef.current &&
-			localVideoRef.current.srcObject instanceof MediaStream
-		) {
+		if (streamRef.current) {
 			// biome-ignore lint/complexity/noForEach: <explanation>
-			localVideoRef.current.srcObject
-				.getTracks()
-				.forEach((track) => track.stop());
-		}
-		if (
-			remoteVideoRef.current &&
-			remoteVideoRef.current.srcObject instanceof MediaStream
-		) {
-			// biome-ignore lint/complexity/noForEach: <explanation>
-			remoteVideoRef.current.srcObject
-				.getTracks()
-				.forEach((track) => track.stop());
+			streamRef.current.getTracks().forEach((track) => track.stop());
 		}
 		const message = {
 			type: "end",
@@ -163,6 +151,33 @@ export default function Calls() {
 		}
 		setCallStatus("idle");
 		setIncomingCallFrom("");
+	};
+
+	const toggleMediaType = () => {
+		const newMediaType = mediaType === "video" ? "audio" : "video";
+		setMediaType(newMediaType);
+
+		if (streamRef.current) {
+			// biome-ignore lint/complexity/noForEach: <explanation>
+			streamRef.current.getTracks().forEach((track) => track.stop());
+		}
+
+		navigator.mediaDevices
+			.getUserMedia({ video: newMediaType === "video", audio: true })
+			.then((newStream) => {
+				streamRef.current = newStream;
+				if (localVideoRef.current) {
+					localVideoRef.current.srcObject = newStream;
+				}
+				if (peerRef.current) {
+					peerRef.current.replaceTrack(
+						peerRef.current.streams[0].getVideoTracks()[0],
+						newStream.getVideoTracks()[0],
+						peerRef.current.streams[0],
+					);
+				}
+			})
+			.catch((err) => console.error("Error toggling media type:", err));
 	};
 
 	return (
@@ -183,11 +198,21 @@ export default function Calls() {
 					/>
 					<div className="flex justify-between">
 						<Button
-							onClick={() => setIsVideoEnabled(!isVideoEnabled)}
-							variant={isVideoEnabled ? "default" : "outline"}
+							onClick={toggleMediaType}
+							variant={mediaType === "video" ? "default" : "outline"}
+							disabled={callStatus !== "connected"}
 						>
-							<Video className="mr-2 h-4 w-4" />
-							{isVideoEnabled ? "Disable Video" : "Enable Video"}
+							{mediaType === "video" ? (
+								<>
+									<Video className="mr-2 h-4 w-4" />
+									Switch to Audio
+								</>
+							) : (
+								<>
+									<Mic className="mr-2 h-4 w-4" />
+									Switch to Video
+								</>
+							)}
 						</Button>
 						{callStatus === "idle" && (
 							<Button onClick={() => startCall()} disabled={!targetId}>
@@ -213,13 +238,14 @@ export default function Calls() {
 					<div className="relative w-full aspect-video bg-gray-200 rounded-lg overflow-hidden">
 						{callStatus === "connected" && (
 							<>
-								{/* biome-ignore lint/a11y/useMediaCaption: <explanation> */}
 								<video
 									ref={remoteVideoRef}
 									autoPlay
 									playsInline
 									className="absolute inset-0 w-full h-full object-cover"
-								/>
+								>
+									<track kind="captions" />
+								</video>
 								<video
 									ref={localVideoRef}
 									autoPlay
