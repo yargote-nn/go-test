@@ -3,13 +3,9 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
+import { RegisterDataSchema } from "@/types/register";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { z } from "zod";
-
-const RegisterDataSchema = z.object({
-	id: z.number(),
-});
 
 export default function Register() {
 	const [nickname, setNickname] = useState("");
@@ -22,7 +18,6 @@ export default function Register() {
 			const { publicKey, privateKey } = await fetch("/api/generate-keys").then(
 				(res) => res.json(),
 			);
-			// console.log(publicKey, privateKey);
 			const response = await fetch("http://localhost:8000/register", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -38,7 +33,6 @@ export default function Register() {
 				const { data, success } = RegisterDataSchema.safeParse(responseData);
 				if (success) {
 					const { id } = data;
-					// console.log(user_id);
 					if (id) {
 						toast({
 							title: "Registration successful",
@@ -48,26 +42,26 @@ export default function Register() {
 						return;
 					}
 					toast({
-						title: "Registration failed",
+						title: "Failed registration",
 						description: "User Not Created",
 						variant: "destructive",
 					});
 				} else {
 					toast({
-						title: "Registration failed",
+						title: "Failed registration",
 						description: "Please try again. Invalid response",
 						variant: "destructive",
 					});
 				}
 			} else {
 				toast({
-					title: "Registration failed",
+					title: "Failed registration",
 					description: "Please try again",
 				});
 			}
 		} catch (error) {
 			toast({
-				title: "Registration failed",
+				title: "Failed registration",
 				description: "Please try again",
 				variant: "destructive",
 			});

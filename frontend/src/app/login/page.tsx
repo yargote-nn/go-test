@@ -1,43 +1,40 @@
-// src/app/login/page.tsx
 "use client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
+import { getServerUrl } from "@/lib/utils";
+import { useUserInfoStore } from "@/stores/user-info";
+import type { UserInfo } from "@/types";
+import { loginDataSchema } from "@/types";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { z } from "zod";
-
-const loginDataSchema = z.object({
-	id: z.number(),
-	nickname: z.string(),
-	token: z.string(),
-	privateKey: z.string(),
-	publicKey: z.string(),
-});
 
 export default function Login() {
 	const [nickname, setNickname] = useState("");
 	const router = useRouter();
 	const { toast } = useToast();
+	const setUserInfo = useUserInfoStore((state) => state.setUserInfo);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const response = await fetch("http://localhost:8000/login", {
+			const response = await fetch(`${getServerUrl()}/login`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ nickname }),
 			});
 			const jsonData = await response.json();
-			console.log(jsonData);
 			const { data, success } = loginDataSchema.safeParse(jsonData);
 			if (success) {
-				localStorage.setItem("token", data.token);
-				localStorage.setItem("user_id", data.id.toString());
-				localStorage.setItem("nickname", data.nickname);
-				localStorage.setItem(`private_key_${data.id}`, data.privateKey);
-				localStorage.setItem(`public_key_${data.id}`, data.publicKey);
+				const userInfo: UserInfo = {
+					userId: data.id.toString(),
+					nickname: data.nickname,
+					token: data.token,
+					privateKey: data.privateKey,
+					publicKey: data.publicKey,
+				};
+				setUserInfo(userInfo);
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",
