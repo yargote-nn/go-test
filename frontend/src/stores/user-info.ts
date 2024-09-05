@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { UserInfo } from "@/types";
 
 interface UserInfoState {
-	userInfo: UserInfo;
+	userInfo: UserInfo | null;
 }
 
 type UserInfoActions = {
@@ -13,30 +13,21 @@ type UserInfoActions = {
 	clearUserInfo: () => void;
 };
 
-const initialState: UserInfoState = {
-	userInfo: {
-		userId: "",
-		nickname: "",
-		token: "",
-		privateKey: "",
-		publicKey: "",
-	},
-};
-
 const useUserInfoStore = create(
 	persist<UserInfoState & UserInfoActions>(
 		(set, get) => ({
-			...initialState,
+			userInfo: null,
 			setUserInfo: (userInfo: UserInfo) => set({ userInfo }),
 			isValidUserInfo: () => {
-				const { userId, nickname, token, privateKey, publicKey } =
-					get().userInfo;
+				const user = get().userInfo;
+				if (!user) return false;
+				const { userId, nickname, token, privateKey, publicKey } = user;
 				const isValidUserInfo = Boolean(
 					userId && nickname && token && privateKey && publicKey,
 				);
 				return isValidUserInfo;
 			},
-			clearUserInfo: () => set(initialState),
+			clearUserInfo: () => set({ userInfo: null }),
 		}),
 		{
 			name: "user-info",

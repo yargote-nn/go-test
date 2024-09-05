@@ -9,6 +9,7 @@ const WSMessageSchema = z.object({
 	aesKeyReceiver: z.string().optional(),
 	messageId: z.number().optional(),
 	state: z.string().optional(),
+	expiredAt: z.string().optional(),
 	fileAttachments: z.string().optional(),
 });
 
@@ -42,19 +43,19 @@ const MessageSchema = z.object({
 
 type Message = z.infer<typeof MessageSchema>;
 
-const MessageResponseSchema = z.array(MessageSchema);
+const MessagesSchema = z.array(MessageSchema);
 
-type MessageResponse = z.infer<typeof MessageResponseSchema>;
+type Messages = z.infer<typeof MessagesSchema>;
 
 export {
 	FileUploadSchema,
 	FileUploadsSchema,
-	MessageResponseSchema,
 	MessageSchema,
+	MessagesSchema,
 	WSMessageSchema,
 	type FileUpload,
 	type FileUploads,
 	type Message,
-	type MessageResponse,
+	type Messages,
 	type WSMessage,
 };

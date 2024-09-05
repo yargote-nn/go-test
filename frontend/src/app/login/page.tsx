@@ -25,14 +25,14 @@ export default function Login() {
 				body: JSON.stringify({ nickname }),
 			});
 			const jsonData = await response.json();
-			const { data, success } = loginDataSchema.safeParse(jsonData);
+			const { data: user, success } = loginDataSchema.safeParse(jsonData);
 			if (success) {
 				const userInfo: UserInfo = {
-					userId: data.id.toString(),
-					nickname: data.nickname,
-					token: data.token,
-					privateKey: data.privateKey,
-					publicKey: data.publicKey,
+					userId: user.id.toString(),
+					nickname: user.nickname,
+					token: user.token,
+					privateKey: user.privateKey,
+					publicKey: user.publicKey,
 				};
 				setUserInfo(userInfo);
 				toast({

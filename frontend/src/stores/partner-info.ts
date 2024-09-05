@@ -6,42 +6,39 @@ import { userToPartner } from "@/mappers/userToPartner";
 import { type PartnerInfo, UserSchema } from "@/types";
 
 interface ParnterInfoState {
-	partnerInfo: PartnerInfo;
-}
-
-type PartnerInfoActions = {
+	partnerInfo: PartnerInfo | null;
 	setPartnerInfo: (partnerInfo: PartnerInfo) => void;
 	updatePartnerInfo: (partnerId: string, token: string) => Promise<void>;
-	clearPartnerInfo: () => void;
-};
-
-const initialState: ParnterInfoState = {
-	partnerInfo: {
-		partnerId: "",
-		publicKey: "",
-		nickname: "",
-	},
-};
+	resetPartnerInfo: () => void;
+}
 
 const usePartnerInfoStore = create(
-	persist<ParnterInfoState & PartnerInfoActions>(
+	persist<ParnterInfoState>(
 		(set) => ({
-			...initialState,
+			partnerInfo: null,
 			setPartnerInfo: (partnerInfo: PartnerInfo) => set({ partnerInfo }),
 			updatePartnerInfo: async (partnerId: string, token: string) => {
-				const response = await fetch(`${getApiUrl()}/api/users/${partnerId}`, {
-					headers: { Authorization: `Bearer ${token}` },
-					method: "GET",
-				});
-				const responseData = await response.json();
-				console.log("Response data:", responseData);
-				const { data: user, success } = UserSchema.safeParse(responseData);
-				if (success) {
-					const partnerInfo = userToPartner(user);
-					set({ partnerInfo });
+				try {
+					const response = await fetch(
+						`${getApiUrl()}/api/users/${partnerId}`,
+						{
+							headers: { Authorization: `Bearer ${token}` },
+							method: "GET",
+						},
+					);
+					const responseData = await response.json();
+					const { data: user, success } = UserSchema.safeParse(responseData);
+					if (success) {
+						const partnerInfo = userToPartner(user);
+						set({ partnerInfo });
+					} else {
+						set({ partnerInfo: null });
+					}
+				} catch (error) {
+					console.error("Error fetching partner info:", error);
 				}
 			},
-			clearPartnerInfo: () => set(initialState),
+			resetPartnerInfo: () => set({ partnerInfo: null }),
 		}),
 		{
 			name: "partner-info",

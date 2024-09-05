@@ -1,13 +1,15 @@
 "use client";
 
-import type { MessageResponse } from "@/types";
+import type { Messages } from "@/types";
 import { useEffect, useRef } from "react";
 import { MessageItem } from "./message-item";
 
-export const MessageList = ({
-	messages,
-	userId,
-}: { messages: MessageResponse; userId: string }) => {
+interface MessageListProps {
+	messages: Messages;
+	userId: string;
+}
+
+export const MessageList = ({ messages, userId }: MessageListProps) => {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
