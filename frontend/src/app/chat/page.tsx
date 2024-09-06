@@ -68,7 +68,8 @@ export default function ChatPage() {
 
 	useEffect(() => {
 		if (userInfo?.token) {
-			return connectWebSocket(userInfo.token);
+			const newToken = userInfo.token;
+			return connectWebSocket(newToken);
 		}
 	}, [userInfo?.token, connectWebSocket]);
 

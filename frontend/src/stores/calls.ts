@@ -187,11 +187,11 @@ function handleIncomingMessage(
 				callStatus: "incomingCall",
 				signal: data.signal,
 			});
+			get().setIsOpen(true);
 			break;
 		case "accept-call":
 			set({ incomingCallFrom: data.from });
 			get().peerRef.current?.signal(data.signal);
-			get().setIsOpen(true);
 			break;
 		case "end":
 			get().endCall();
