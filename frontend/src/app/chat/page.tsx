@@ -1,5 +1,7 @@
 "use client";
 
+import { Calls } from "@/components/calls";
+import { Broadcast, BroadcastOff } from "@/components/icons/broadcast";
 import { MessageList } from "@/components/message-list";
 import { NewMessage } from "@/components/new-message";
 import { Input } from "@/components/ui/input";
@@ -8,7 +10,7 @@ import { usePartnerInfo } from "@/hooks/use-partner-info";
 import { useUserInfo } from "@/hooks/use-user-info";
 import { useWebSocket } from "@/hooks/use-web-socket";
 import { useWSMessages } from "@/hooks/use-ws-messages";
-import { CircleIcon } from "lucide-react";
+import { useCallStore } from "@/stores/calls";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -25,6 +27,8 @@ export default function ChatPage() {
 		onMessageSent: handleMessageSent,
 		onStatusUpdate: handleStatusUpdate,
 	});
+
+	const connectWebSocket = useCallStore((state) => state.connectWebSocket);
 
 	useEffect(() => {
 		if (!isValidUserInfo()) {
@@ -62,33 +66,42 @@ export default function ChatPage() {
 		}
 	}, [userInfo?.token, webSocketConnect]);
 
+	useEffect(() => {
+		if (userInfo?.token) {
+			return connectWebSocket(userInfo.token);
+		}
+	}, [userInfo?.token, connectWebSocket]);
+
 	return (
-		<div className="flex flex-col h-screen p-4">
+		<div className="flex flex-col h-screen p-4 items-center">
 			<span className="text-center">
 				{isWebSocketReady ? (
-					<CircleIcon className="size-6 fill-green-600" />
+					<Broadcast className="size-8" />
 				) : (
-					<CircleIcon className="size-6 fill-red-600" />
+					<BroadcastOff className="size-8" />
 				)}
 			</span>
-			<h1 className="text-2xl text-center font-bold mb-4">
+			<h1 className="text-xl text-center font-bold mb-4">
 				Chat of {userInfo?.nickname} with{" "}
-				{partnerInfo?.nickname ?? "No partner"}
+				{partnerInfo?.nickname ?? "no partner"}
 			</h1>
-			<MessageList messages={messages} userId={userInfo?.userId ?? ""} />
 			<Input
 				type="text"
 				placeholder="Partner ID"
 				value={partnerId}
 				onChange={(e) => setPartnerId(e.target.value)}
-				className="mb-4"
+				className="mb-4 max-w-sm"
 			/>
+			<MessageList messages={messages} userId={userInfo?.userId ?? ""} />
 			{userInfo && partnerInfo && (
-				<NewMessage
-					userInfo={userInfo}
-					partnerInfo={partnerInfo}
-					sendMessage={sendMessage}
-				/>
+				<div className="flex flex-col gap-2 w-full max-w-xl">
+					<Calls partnerInfo={partnerInfo} />
+					<NewMessage
+						userInfo={userInfo}
+						partnerInfo={partnerInfo}
+						sendMessage={sendMessage}
+					/>
+				</div>
 			)}
 		</div>
 	);

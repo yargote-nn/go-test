@@ -24,11 +24,11 @@ import {
 	type UserInfo,
 	type WSMessage,
 } from "@/types";
-import { useCallback } from "react";
+import { Paperclip, Send } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_FILE_TYPES = ["image/jpeg", "image/png", "application/pdf"];
-
 const formSchema = z.object({
 	newMessage: z.string().min(1, {
 		message: "Message is required",
@@ -64,6 +64,9 @@ export function NewMessage({
 	sendMessage,
 }: NewMessageProps) {
 	const { addNewMessage } = useMessages();
+	const [fileSelected, setFileSelected] = useState<boolean | null>(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
+
 	const form = useForm<FormValues>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
@@ -155,23 +158,30 @@ export function NewMessage({
 		sendMessageCallback(values.newMessage, values.files);
 	}
 
+	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files;
+		form.setValue("files", files as FileList);
+		setFileSelected(files && files.length > 0);
+	};
+
 	return (
 		<Form {...form}>
-			<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+			<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
 				<FormField
 					control={form.control}
 					name="files"
-					render={({ field }) => (
-						<FormItem>
+					render={({ field: { onChange, ...field } }) => (
+						<FormItem className="hidden">
 							<FormControl>
 								<Input
 									type="file"
 									multiple={true}
-									placeholder="Files"
 									accept={ACCEPTED_FILE_TYPES.join(",")}
 									onChange={(e) => {
-										field.onChange(e.target.files);
+										onChange(e.target.files);
+										handleFileChange(e);
 									}}
+									ref={fileInputRef}
 								/>
 							</FormControl>
 							<FormMessage />
@@ -184,13 +194,36 @@ export function NewMessage({
 					render={({ field }) => (
 						<FormItem>
 							<FormControl>
-								<Input placeholder="New Message" {...field} />
+								<div className="relative flex items-center">
+									<Button
+										type="button"
+										size="icon"
+										variant="ghost"
+										className={`absolute left-2 ${fileSelected ? "text-primary" : ""}`}
+										onClick={() => fileInputRef.current?.click()}
+									>
+										<Paperclip className="h-5 w-5" />
+										<span className="sr-only">Attach file</span>
+									</Button>
+									<Input
+										placeholder="New Message"
+										{...field}
+										className="pl-12 pr-12 py-6"
+									/>
+									<Button
+										type="submit"
+										size="icon"
+										className="absolute right-2"
+									>
+										<Send className="h-4 w-4" />
+										<span className="sr-only">Send message</span>
+									</Button>
+								</div>
 							</FormControl>
 							<FormMessage />
 						</FormItem>
 					)}
 				/>
-				<Button type="submit">Enviar</Button>
 			</form>
 		</Form>
 	);
