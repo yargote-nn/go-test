@@ -1,35 +1,28 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import type { Messages } from "@/types";
+import { useMessagesStore } from "@/stores/messages";
 import { ChevronDownIcon } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { MessageItem } from "./message-item";
 
 interface MessageListProps {
-	messages: Messages;
 	userId: string;
 }
 
-export const MessageList = ({ messages, userId }: MessageListProps) => {
+export const MessageList = ({ userId }: MessageListProps) => {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const messages = useMessagesStore((state) => state.messages);
 
 	const scrollToBottom = useCallback(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, []);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
 	useEffect(() => {
-		const shouldScrollToBottom = () => {
-			if (!containerRef.current) return true;
-			const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-			return scrollTop + clientHeight >= scrollHeight - 100; // Within 100px of bottom
-		};
-
-		if (shouldScrollToBottom()) {
-			scrollToBottom();
-		}
-	}, [scrollToBottom]);
+		scrollToBottom();
+	}, [messages, scrollToBottom]);
 
 	return (
 		<div

@@ -19,7 +19,7 @@ export default function ChatPage() {
 	const [partnerId, setPartnerId] = useState("");
 	const { userInfo, isValidUserInfo } = useUserInfo();
 	const { partnerInfo, updatePartnerInfo, resetPartnerInfo } = usePartnerInfo();
-	const { messages, updateMessages, setMessages } = useMessages();
+	const { updateMessages, setMessages } = useMessages();
 	const { handleNewMessage, handleMessageSent, handleStatusUpdate } =
 		useWSMessages({ userInfo });
 	const { isWebSocketReady, webSocketConnect, sendMessage } = useWebSocket({
@@ -93,7 +93,7 @@ export default function ChatPage() {
 				onChange={(e) => setPartnerId(e.target.value)}
 				className="mb-4 max-w-sm"
 			/>
-			<MessageList messages={messages} userId={userInfo?.userId ?? ""} />
+			<MessageList userId={userInfo?.userId ?? ""} />
 			{userInfo && partnerInfo && (
 				<div className="flex flex-col gap-2 w-full max-w-xl">
 					<Calls partnerInfo={partnerInfo} />
