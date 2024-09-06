@@ -1,0 +1,10 @@
+{
+	"event": "Type of event",
+	"data": {
+		"key": "value"
+	},
+	"error": {
+		"message": "Error message",
+		"code": "Error code"
+	}
+}
