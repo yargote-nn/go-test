@@ -16,12 +16,7 @@ interface MessageState {
 	setMessages: (messages: Messages) => void;
 	updateMessages: (partnerInfo: PartnerInfo, userInfo: UserInfo) => void;
 	addNewMessage: (message: Message) => void;
-	updateMessageSent: (
-		messageId: number,
-		newMessageId: number,
-		newState: string,
-	) => void;
-	updateMessageState: (messageId: number, newState: string) => void;
+	updateMessageState: (messageId: string, newState: string) => void;
 }
 
 const useMessagesStore = create(
@@ -31,19 +26,7 @@ const useMessagesStore = create(
 			setMessages: (messages: Messages) => set({ messages }),
 			addNewMessage: (message: Message) =>
 				set((state) => ({ messages: [...state.messages, message] })),
-			updateMessageSent: (
-				messageId: number,
-				newMessageId: number,
-				newState: string,
-			) =>
-				set((state) => ({
-					messages: state.messages.map((message) =>
-						message.id === messageId
-							? { ...message, id: newMessageId, state: newState }
-							: message,
-					),
-				})),
-			updateMessageState: (messageId: number, newState: string) =>
+			updateMessageState: (messageId: string, newState: string) =>
 				set((state) => ({
 					messages: state.messages.map((message) =>
 						message.id === messageId
@@ -67,7 +50,7 @@ const useMessagesStore = create(
 						const decryptedMessages = await Promise.all(
 							messages.map(async (message) => {
 								if (
-									message.receiverId === Number(userInfo.userId) &&
+									message.receiverId === userInfo.userId &&
 									message.aesKeyReceiver
 								) {
 									const { decryptedMessage, decryptedFileUploads } =
@@ -80,7 +63,7 @@ const useMessagesStore = create(
 									message.body = decryptedMessage;
 									message.fileAttachments = decryptedFileUploads;
 								} else if (
-									message.senderId === Number(userInfo.userId) &&
+									message.senderId === userInfo.userId &&
 									message.aesKeySender
 								) {
 									const { decryptedMessage, decryptedFileUploads } =

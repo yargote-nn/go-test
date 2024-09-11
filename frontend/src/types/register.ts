@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const RegisterDataSchema = z.object({
-	id: z.number(),
+	created: z.boolean(),
 });
 
 export { RegisterDataSchema };

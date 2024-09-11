@@ -3,9 +3,11 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
+import { getApiUrl } from "@/lib/utils";
 import { RegisterDataSchema } from "@/types/register";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 
 export default function Register() {
 	const [nickname, setNickname] = useState("");
@@ -18,10 +20,13 @@ export default function Register() {
 			const { publicKey, privateKey } = await fetch("/api/generate-keys").then(
 				(res) => res.json(),
 			);
-			const response = await fetch("http://localhost:8000/register", {
+			const id = uuidv4();
+			console.log({ id, nickname, publicKey, privateKey });
+			const response = await fetch(`${getApiUrl()}/register`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
+					id,
 					nickname,
 					publicKey,
 					privateKey,
@@ -32,8 +37,8 @@ export default function Register() {
 				const responseData = await response.json();
 				const { data, success } = RegisterDataSchema.safeParse(responseData);
 				if (success) {
-					const { id } = data;
-					if (id) {
+					const { created } = data;
+					if (created) {
 						toast({
 							title: "Registration successful",
 							description: "Please login with your new account",

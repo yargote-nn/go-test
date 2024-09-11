@@ -1,6 +1,6 @@
 import { useMessages } from "@/hooks/use-messages";
 import { decryptMessage } from "@/lib/crypto";
-import type { UserInfo, WSMessage } from "@/types";
+import type { CommonMessage, UpdateStateMessage, UserInfo } from "@/types";
 import { useCallback } from "react";
 
 interface useWSMessagesProps {
@@ -8,11 +8,10 @@ interface useWSMessagesProps {
 }
 
 export const useWSMessages = ({ userInfo }: useWSMessagesProps) => {
-	const { addNewMessage, updateMessageSent, updateMessageState } =
-		useMessages();
+	const { addNewMessage, updateMessageState } = useMessages();
 
 	const handleNewMessage = useCallback(
-		async (message: WSMessage, sendMessage: (message: string) => void) => {
+		async (message: CommonMessage, sendMessage: (message: string) => void) => {
 			console.log("handleNewMessage");
 			let encryptedAESKey: string | undefined;
 			if (!userInfo) {
@@ -20,13 +19,13 @@ export const useWSMessages = ({ userInfo }: useWSMessagesProps) => {
 			}
 			if (
 				userInfo &&
-				message.receiverId === Number(userInfo.userId) &&
+				message.receiverId === userInfo.userId &&
 				message.aesKeyReceiver
 			) {
 				encryptedAESKey = message.aesKeyReceiver;
 			} else if (
 				userInfo &&
-				message.senderId === Number(userInfo.userId) &&
+				message.senderId === userInfo.userId &&
 				message.aesKeySender
 			) {
 				encryptedAESKey = message.aesKeySender;
@@ -42,7 +41,7 @@ export const useWSMessages = ({ userInfo }: useWSMessagesProps) => {
 			);
 
 			addNewMessage({
-				id: message.messageId ?? 0,
+				id: message.messageId ?? "",
 				senderId: message.senderId,
 				receiverId: message.receiverId,
 				body: decryptedMessage,
@@ -53,30 +52,25 @@ export const useWSMessages = ({ userInfo }: useWSMessagesProps) => {
 			sendMessage(
 				JSON.stringify({
 					type: "status_update",
-					state: "received",
-					messageId: message.messageId,
-					receiverId: message.senderId,
+					data: {
+						state: "received",
+						messageId: message.messageId,
+						receiverId: message.senderId,
+						senderId: message.receiverId,
+					},
 				}),
 			);
 		},
 		[userInfo, addNewMessage],
 	);
 
-	const handleMessageSent = useCallback(
-		(message: WSMessage) => {
-			console.log("handleMessageSent", message);
-			updateMessageSent(0, message.messageId ?? 0, message.state ?? "sent");
-		},
-		[updateMessageSent],
-	);
-
 	const handleStatusUpdate = useCallback(
-		(message: WSMessage) => {
+		(message: UpdateStateMessage) => {
 			console.log("handleStatusUpdate", message);
-			updateMessageState(message.messageId ?? 0, message.state ?? "sent");
+			updateMessageState(message.messageId ?? "", message.state ?? "sent");
 		},
 		[updateMessageState],
 	);
 
-	return { handleNewMessage, handleMessageSent, handleStatusUpdate };
+	return { handleNewMessage, handleStatusUpdate };
 };

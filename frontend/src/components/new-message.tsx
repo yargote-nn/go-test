@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ import {
 	type Message,
 	type PartnerInfo,
 	type UserInfo,
-	type WSMessage,
 } from "@/types";
 import { Paperclip, Send } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -121,23 +121,28 @@ export function NewMessage({
 					userInfo.publicKey,
 					filesUploads,
 				);
-				const wsMessage: WSMessage = {
+				const messageId = uuidv4();
+				const wsMessage = {
 					type: "message",
-					body: encryptedMessage,
-					receiverId: Number(partnerInfo.partnerId),
-					senderId: Number(userInfo.userId),
-					aesKeyReceiver: encryptedAESKeyReceiver,
-					aesKeySender: encryptedAESKeySender,
-					expiredAt: expires,
-					state: "sent",
-					fileAttachments: JSON.stringify(encryptedFilesUploads),
+					data: {
+						senderId: userInfo.userId,
+						receiverId: partnerInfo.partnerId,
+						body: encryptedMessage,
+						aesKeyReceiver: encryptedAESKeyReceiver,
+						aesKeySender: encryptedAESKeySender,
+						messageId: messageId,
+						state: "sent",
+						fileAttachments: JSON.stringify(encryptedFilesUploads),
+						expiredAt: expires,
+					},
 				};
+				console.log("wsMessage", wsMessage);
 				sendMessage(JSON.stringify(wsMessage));
 
 				const message: Message = {
-					id: 0,
-					senderId: Number(userInfo.userId),
-					receiverId: Number(partnerInfo.partnerId),
+					id: messageId,
+					senderId: userInfo.userId,
+					receiverId: partnerInfo.partnerId,
 					body: newMessage,
 					state: "sent",
 					expiredAt: expires,

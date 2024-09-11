@@ -9,6 +9,7 @@ interface CallStore {
 	incomingCallFrom: string;
 	signal: string;
 	socketRef: React.MutableRefObject<WebSocket | null>;
+	isWebSocketReady: boolean;
 	peerRef: React.MutableRefObject<Peer.Instance | null>;
 	streamRef: React.MutableRefObject<MediaStream | null>;
 	localVideoRef: React.RefObject<HTMLVideoElement>;
@@ -33,6 +34,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
 	incomingCallFrom: "",
 	signal: "",
 	socketRef: { current: null },
+	isWebSocketReady: false,
 	peerRef: { current: null },
 	streamRef: { current: null },
 	localVideoRef: { current: null },
@@ -48,8 +50,16 @@ export const useCallStore = create<CallStore>((set, get) => ({
 			`ws://localhost:8000/ws/webrtc?token=${token}`,
 		);
 
-		socket.onopen = () => console.log("WebSocket RTC Connected");
-		socket.onclose = () => console.log("WebSocket RTC Disconnected");
+		console.log("Socket:", socket);
+
+		socket.onopen = () => {
+			console.log("WebSocket RTC Connected");
+			set({ isWebSocketReady: true });
+		};
+		socket.onclose = () => {
+			console.log("WebSocket RTC Disconnected");
+			set({ isWebSocketReady: false });
+		};
 
 		socket.onmessage = (event) => {
 			console.log("Incoming message:", event.data);
@@ -57,7 +67,13 @@ export const useCallStore = create<CallStore>((set, get) => ({
 			handleIncomingMessage(data, get, set);
 		};
 
-		get().socketRef.current = socket;
+		set({ socketRef: { current: socket } });
+
+		return () => {
+			if (socket) {
+				socket.close();
+			}
+		};
 	},
 
 	startCall: (isAccepting, to) => {

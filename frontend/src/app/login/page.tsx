@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { getServerUrl } from "@/lib/utils";
+import { getApiUrl } from "@/lib/utils";
 import { useUserInfoStore } from "@/stores/user-info";
 import type { UserInfo } from "@/types";
 import { loginDataSchema } from "@/types";
@@ -19,7 +19,7 @@ export default function Login() {
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const response = await fetch(`${getServerUrl()}/login`, {
+			const response = await fetch(`${getApiUrl()}/login`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ nickname }),
@@ -28,7 +28,7 @@ export default function Login() {
 			const { data: user, success } = loginDataSchema.safeParse(jsonData);
 			if (success) {
 				const userInfo: UserInfo = {
-					userId: user.id.toString(),
+					userId: user.id,
 					nickname: user.nickname,
 					token: user.token,
 					privateKey: user.privateKey,

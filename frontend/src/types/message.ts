@@ -1,16 +1,39 @@
 import { z } from "zod";
 
+const CommonMessageSchema = z.object({
+	senderId: z.string(),
+	receiverId: z.string(),
+	body: z.string(),
+	aesKeySender: z.string(),
+	aesKeyReceiver: z.string(),
+	messageId: z.string(),
+	state: z.string(),
+	expiredAt: z.string(),
+	fileAttachments: z.string(),
+});
+
+type CommonMessage = z.infer<typeof CommonMessageSchema>;
+
+const UpdateStateMessageSchema = z.object({
+	senderId: z.string(),
+	receiverId: z.string(),
+	state: z.string(),
+	messageId: z.string(),
+});
+
+type UpdateStateMessage = z.infer<typeof UpdateStateMessageSchema>;
+
+const ErrorSchema = z.object({
+	status: z.string(),
+	message: z.string(),
+});
+
+type Error = z.infer<typeof ErrorSchema>;
+
 const WSMessageSchema = z.object({
 	type: z.string(),
-	senderId: z.number(),
-	receiverId: z.number(),
-	body: z.string(),
-	aesKeySender: z.string().optional(),
-	aesKeyReceiver: z.string().optional(),
-	messageId: z.number().optional(),
-	state: z.string().optional(),
-	expiredAt: z.string().optional(),
-	fileAttachments: z.string().optional(),
+	data: CommonMessageSchema.or(UpdateStateMessageSchema),
+	error: ErrorSchema.optional(),
 });
 
 type WSMessage = z.infer<typeof WSMessageSchema>;
@@ -29,9 +52,9 @@ const FileUploadsSchema = z.array(FileUploadSchema);
 type FileUploads = z.infer<typeof FileUploadsSchema>;
 
 const MessageSchema = z.object({
-	id: z.number(),
-	senderId: z.number(),
-	receiverId: z.number(),
+	id: z.string(),
+	senderId: z.string(),
+	receiverId: z.string(),
 	body: z.string(),
 	state: z.string(),
 	expiredAt: z.string(),
@@ -48,14 +71,20 @@ const MessagesSchema = z.array(MessageSchema);
 type Messages = z.infer<typeof MessagesSchema>;
 
 export {
+	CommonMessageSchema,
+	ErrorSchema,
 	FileUploadSchema,
 	FileUploadsSchema,
 	MessageSchema,
 	MessagesSchema,
+	UpdateStateMessageSchema,
 	WSMessageSchema,
+	type CommonMessage,
+	type Error,
 	type FileUpload,
 	type FileUploads,
 	type Message,
 	type Messages,
+	type UpdateStateMessage,
 	type WSMessage,
 };

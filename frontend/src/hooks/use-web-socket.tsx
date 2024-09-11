@@ -1,18 +1,20 @@
-import { type WSMessage, WSMessageSchema } from "@/types";
+import {
+	type CommonMessage,
+	type UpdateStateMessage,
+	WSMessageSchema,
+} from "@/types";
 import { useCallback, useRef, useState } from "react";
 
 interface useWebSocketProps {
 	onNewMessage: (
-		data: WSMessage,
+		data: CommonMessage,
 		sendMessage: (message: string) => void,
 	) => Promise<void>;
-	onMessageSent: (data: WSMessage) => void;
-	onStatusUpdate: (data: WSMessage) => void;
+	onStatusUpdate: (data: UpdateStateMessage) => void;
 }
 
 export function useWebSocket({
 	onNewMessage,
-	onMessageSent,
 	onStatusUpdate,
 }: useWebSocketProps) {
 	const [isWebSocketReady, setIsWebSocketReady] = useState(false);
@@ -21,6 +23,7 @@ export function useWebSocket({
 	const webSocketConnect = useCallback(
 		(token: string) => {
 			const websocket = new WebSocket(`ws://localhost:8000/ws?token=${token}`);
+			console.log("WebSocket:", websocket);
 			wsRef.current = websocket;
 
 			websocket.onopen = () => {
@@ -30,25 +33,25 @@ export function useWebSocket({
 
 			websocket.onmessage = async (event) => {
 				console.log("WebSocket message received:", event.data);
-				const { data, success } = WSMessageSchema.safeParse(
+				const { data: message, success } = WSMessageSchema.safeParse(
 					JSON.parse(event.data),
 				);
 				if (success) {
-					switch (data.type) {
-						case "new_message":
-							console.log("New message:", data);
-							await onNewMessage(data, sendMessage);
+					switch (message.type) {
+						case "new_message": {
+							console.log("New message, data:", message.data);
+							const commonMessage = message.data as CommonMessage;
+							await onNewMessage(commonMessage, sendMessage);
 							break;
-						case "message_sent":
-							console.log("Message sent:", data);
-							onMessageSent(data);
+						}
+						case "status_update": {
+							console.log("Status update:", message.data);
+							const updatedMessage = message.data as UpdateStateMessage;
+							onStatusUpdate(updatedMessage);
 							break;
-						case "status_update":
-							console.log("Status update:", data);
-							onStatusUpdate(data);
-							break;
+						}
 						default:
-							console.log("Unknown message type:", data.type);
+							console.log("Unknown message type:", message.type);
 					}
 				}
 			};
@@ -67,7 +70,7 @@ export function useWebSocket({
 				if (websocket) websocket.close();
 			};
 		},
-		[onNewMessage, onMessageSent, onStatusUpdate],
+		[onNewMessage, onStatusUpdate],
 	);
 
 	const sendMessage = useCallback((message: string) => {

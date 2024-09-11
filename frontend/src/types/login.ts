@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const loginDataSchema = z.object({
-	id: z.number(),
+	id: z.string(),
 	nickname: z.string(),
 	token: z.string(),
 	privateKey: z.string(),

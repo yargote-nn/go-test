@@ -8,7 +8,7 @@ import { type PartnerInfo, UserSchema } from "@/types";
 interface ParnterInfoState {
 	partnerInfo: PartnerInfo | null;
 	setPartnerInfo: (partnerInfo: PartnerInfo) => void;
-	updatePartnerInfo: (partnerId: string, token: string) => Promise<void>;
+	updatePartnerInfo: (partnerNickname: string, token: string) => Promise<void>;
 	resetPartnerInfo: () => void;
 }
 
@@ -17,16 +17,17 @@ const usePartnerInfoStore = create(
 		(set) => ({
 			partnerInfo: null,
 			setPartnerInfo: (partnerInfo: PartnerInfo) => set({ partnerInfo }),
-			updatePartnerInfo: async (partnerId: string, token: string) => {
+			updatePartnerInfo: async (partnerNickname: string, token: string) => {
 				try {
 					const response = await fetch(
-						`${getApiUrl()}/api/users/${partnerId}`,
+						`${getApiUrl()}/api/users?nickname=${partnerNickname}`,
 						{
 							headers: { Authorization: `Bearer ${token}` },
 							method: "GET",
 						},
 					);
 					const responseData = await response.json();
+					console.log("responseData", responseData);
 					const { data: user, success } = UserSchema.safeParse(responseData);
 					if (success) {
 						const partnerInfo = userToPartner(user);

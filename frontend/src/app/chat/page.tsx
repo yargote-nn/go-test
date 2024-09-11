@@ -16,19 +16,18 @@ import { useCallback, useEffect, useState } from "react";
 
 export default function ChatPage() {
 	const router = useRouter();
-	const [partnerId, setPartnerId] = useState("");
+	const [partnerNickname, setPartnerNickname] = useState("");
 	const { userInfo, isValidUserInfo } = useUserInfo();
 	const { partnerInfo, updatePartnerInfo, resetPartnerInfo } = usePartnerInfo();
 	const { updateMessages, setMessages } = useMessages();
-	const { handleNewMessage, handleMessageSent, handleStatusUpdate } =
-		useWSMessages({ userInfo });
+	const { handleNewMessage, handleStatusUpdate } = useWSMessages({ userInfo });
 	const { isWebSocketReady, webSocketConnect, sendMessage } = useWebSocket({
 		onNewMessage: handleNewMessage,
-		onMessageSent: handleMessageSent,
 		onStatusUpdate: handleStatusUpdate,
 	});
 
 	const connectWebSocket = useCallStore((state) => state.connectWebSocket);
+	const isWebRTCSocketReady = useCallStore((state) => state.isWebSocketReady);
 
 	useEffect(() => {
 		if (!isValidUserInfo()) {
@@ -37,12 +36,12 @@ export default function ChatPage() {
 	}, [isValidUserInfo, router]);
 
 	const handleUpdateInfo = useCallback(() => {
-		if (partnerId && userInfo?.token) {
-			updatePartnerInfo(partnerId, userInfo.token);
+		if (partnerNickname && userInfo?.token) {
+			updatePartnerInfo(partnerNickname, userInfo.token);
 		} else {
 			resetPartnerInfo();
 		}
-	}, [partnerId, userInfo?.token, updatePartnerInfo, resetPartnerInfo]);
+	}, [partnerNickname, userInfo?.token, updatePartnerInfo, resetPartnerInfo]);
 
 	const handleUpdateMessages = useCallback(() => {
 		if (partnerInfo && userInfo) {
@@ -76,7 +75,7 @@ export default function ChatPage() {
 	return (
 		<div className="flex flex-col h-screen p-4 items-center">
 			<span className="text-center">
-				{isWebSocketReady ? (
+				{isWebSocketReady && isWebRTCSocketReady ? (
 					<Broadcast className="size-8" />
 				) : (
 					<BroadcastOff className="size-8" />
@@ -88,11 +87,12 @@ export default function ChatPage() {
 			</h1>
 			<Input
 				type="text"
-				placeholder="Partner ID"
-				value={partnerId}
-				onChange={(e) => setPartnerId(e.target.value)}
+				placeholder="Partner nickname"
+				value={partnerNickname}
+				onChange={(e) => setPartnerNickname(e.target.value)}
 				className="mb-4 max-w-sm"
 			/>
+			<MessageList userId={userInfo?.userId ?? ""} />
 			<MessageList userId={userInfo?.userId ?? ""} />
 			{userInfo && partnerInfo && (
 				<div className="flex flex-col gap-2 w-full max-w-xl">

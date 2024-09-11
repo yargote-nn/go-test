@@ -6,9 +6,6 @@ export function useMessages() {
 	const updateMessages = useMessagesStore((state) => state.updateMessages);
 	const setMessages = useMessagesStore((state) => state.setMessages);
 	const addNewMessage = useMessagesStore((state) => state.addNewMessage);
-	const updateMessageSent = useMessagesStore(
-		(state) => state.updateMessageSent,
-	);
 	const updateMessageState = useMessagesStore(
 		(state) => state.updateMessageState,
 	);
@@ -19,16 +16,8 @@ export function useMessages() {
 			setMessages,
 			updateMessages,
 			addNewMessage,
-			updateMessageSent,
 			updateMessageState,
 		}),
-		[
-			messages,
-			setMessages,
-			updateMessages,
-			addNewMessage,
-			updateMessageSent,
-			updateMessageState,
-		],
+		[messages, setMessages, updateMessages, addNewMessage, updateMessageState],
 	);
 }
