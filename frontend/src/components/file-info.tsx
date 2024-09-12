@@ -19,14 +19,14 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 	const isImage = fileType.startsWith("image/");
 
 	return (
-		<div className="p-4 border rounded-lg shadow-sm">
+		<div className="p-2 border rounded-lg shadow-sm">
 			<div className="flex items-center mb-4">
 				{isImage ? (
-					<FileImage className="w-8 h-8 text-blue-500 mr-2" />
+					<FileImage className="size-4 mr-2" />
 				) : (
-					<FileIcon className="w-8 h-8 text-gray-500 mr-2" />
+					<FileIcon className="size-4 mr-2" />
 				)}
-				<h2 className="text-xl font-semibold">{fileName}</h2>
+				<h2 className="font-semibold">{fileName}</h2>
 			</div>
 			<div className="space-y-2">
 				<p>

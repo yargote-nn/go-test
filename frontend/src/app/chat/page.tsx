@@ -73,29 +73,32 @@ export default function ChatPage() {
 	}, [userInfo?.token, connectWebSocket]);
 
 	return (
-		<div className="flex flex-col h-screen p-4 items-center">
-			<span className="text-center">
-				{isWebSocketReady && isWebRTCSocketReady ? (
-					<Broadcast className="size-8" />
-				) : (
-					<BroadcastOff className="size-8" />
-				)}
-			</span>
-			<h1 className="text-xl text-center font-bold mb-4">
-				Chat of {userInfo?.nickname} with{" "}
-				{partnerInfo?.nickname ?? "no partner"}
-			</h1>
+		<div className="flex flex-col h-screen p-4 bg-gray-100 items-center">
+			<header className="flex items-center justify-center mb-4">
+				<span className="text-center">
+					{isWebSocketReady && isWebRTCSocketReady ? (
+						<Broadcast className="size-8" />
+					) : (
+						<BroadcastOff className="size-8" />
+					)}
+				</span>
+				<h1 className="text-2xl font-bold">
+					Chat of {userInfo?.nickname} with{" "}
+					{partnerInfo?.nickname ?? "no partner"}
+				</h1>
+			</header>
 			<Input
 				type="text"
 				placeholder="Partner nickname"
 				value={partnerNickname}
 				onChange={(e) => setPartnerNickname(e.target.value)}
-				className="mb-4 max-w-sm"
+				className="mb-4 max-w-sm p-2 border text-base text-center"
 			/>
-			<MessageList userId={userInfo?.userId ?? ""} />
-			<MessageList userId={userInfo?.userId ?? ""} />
+			<div className="flex-1 overflow-hidden">
+				<MessageList userId={userInfo?.userId ?? ""} />
+			</div>
 			{userInfo && partnerInfo && (
-				<div className="flex flex-col gap-2 w-full max-w-xl">
+				<div className="flex flex-col gap-2 w-full max-w-xl mt-4">
 					<Calls partnerInfo={partnerInfo} />
 					<NewMessage
 						userInfo={userInfo}

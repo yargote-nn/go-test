@@ -26,6 +26,7 @@ import {
 } from "@/types";
 import { Paperclip, Send } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { Textarea } from "./ui/textarea";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_FILE_TYPES = ["image/jpeg", "image/png", "application/pdf"];
@@ -169,67 +170,80 @@ export function NewMessage({
 		setFileSelected(files && files.length > 0);
 	};
 
+	const handleKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key === "Enter" && !event.shiftKey) {
+			event.preventDefault();
+			const values = form.getValues();
+			if (values) {
+				onSubmit(values);
+			}
+		}
+	};
+
 	return (
-		<Form {...form}>
-			<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-				<FormField
-					control={form.control}
-					name="files"
-					render={({ field: { onChange, ...field } }) => (
-						<FormItem className="hidden">
-							<FormControl>
-								<Input
-									type="file"
-									multiple={true}
-									accept={ACCEPTED_FILE_TYPES.join(",")}
-									onChange={(e) => {
-										onChange(e.target.files);
-										handleFileChange(e);
-									}}
-									ref={fileInputRef}
-								/>
-							</FormControl>
-							<FormMessage />
-						</FormItem>
-					)}
-				/>
-				<FormField
-					control={form.control}
-					name="newMessage"
-					render={({ field }) => (
-						<FormItem>
-							<FormControl>
-								<div className="relative flex items-center">
-									<Button
-										type="button"
-										size="icon"
-										variant="ghost"
-										className={`absolute left-2 ${fileSelected ? "text-primary" : ""}`}
-										onClick={() => fileInputRef.current?.click()}
-									>
-										<Paperclip className="h-5 w-5" />
-										<span className="sr-only">Attach file</span>
-									</Button>
+		<div className="fixed bottom-0 left-0 right-0 z-10 p-4 max-w-lg m-auto">
+			<Form {...form}>
+				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+					<FormField
+						control={form.control}
+						name="files"
+						render={({ field: { onChange, ...field } }) => (
+							<FormItem className="hidden">
+								<FormControl>
 									<Input
-										placeholder="New Message"
-										{...field}
-										className="pl-12 pr-12 py-6"
+										type="file"
+										multiple={true}
+										accept={ACCEPTED_FILE_TYPES.join(",")}
+										onChange={(e) => {
+											onChange(e.target.files);
+											handleFileChange(e);
+										}}
+										ref={fileInputRef}
 									/>
-									<Button
-										type="submit"
-										size="icon"
-										className="absolute right-2"
-									>
-										<Send className="h-4 w-4" />
-										<span className="sr-only">Send message</span>
-									</Button>
-								</div>
-							</FormControl>
-							<FormMessage />
-						</FormItem>
-					)}
-				/>
-			</form>
-		</Form>
+								</FormControl>
+								<FormMessage />
+							</FormItem>
+						)}
+					/>
+					<FormField
+						control={form.control}
+						name="newMessage"
+						render={({ field }) => (
+							<FormItem>
+								<FormControl>
+									<div className="relative flex items-center">
+										<Button
+											type="button"
+											size="icon"
+											variant="ghost"
+											className={`absolute left-2 ${fileSelected ? "text-primary" : ""}`}
+											onClick={() => fileInputRef.current?.click()}
+										>
+											<Paperclip className="h-5 w-5" />
+											<span className="sr-only">Attach file</span>
+										</Button>
+										<Textarea
+											onKeyDown={handleKeyDown}
+											placeholder="New Message"
+											{...field}
+											className="pl-12 pr-12 py-6"
+										/>
+										<Button
+											type="submit"
+											size="icon"
+											className="absolute right-2"
+										>
+											<Send className="h-4 w-4" />
+											<span className="sr-only">Send message</span>
+										</Button>
+									</div>
+								</FormControl>
+								<FormMessage />
+							</FormItem>
+						)}
+					/>
+				</form>
+			</Form>
+		</div>
 	);
 }

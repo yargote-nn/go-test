@@ -1,21 +1,35 @@
 import { FileInfo } from "@/components/file-info";
 import type { FileUpload, Message } from "@/types";
 
+const statusColors = {
+	sent: "bg-red-500",
+	received: "bg-green-500",
+};
+
 export const MessageItem = ({
 	message,
 	userId,
 }: { message: Message; userId: string }) => (
-	<div
-		className={`p-2 rounded-lg mx-auto bg-gray-200 max-w-md ${
-			message.senderId === userId ? "ml-auto bg-blue-200" : "mr-auto"
+	<li
+		className={`flex flex-col space-x-4 p-2 hover:bg-primary/35 transition-colors duration-150 ease-in-out rounded-lg mx-auto max-w-md shadow-md gap-2 ${
+			message.senderId === userId ? "ml-auto bg-primary/10" : "mr-auto"
 		}`}
 	>
-		<p>{`${
-			message.senderId === userId ? "You" : "Partner"
-		}: ${message.body}`}</p>
-		<p className="text-xs text-gray-500">{message.state}</p>
-		{message.fileAttachments?.map((file: FileUpload) => (
-			<FileInfo key={file.fileName} fileInfo={file} />
-		))}
-	</div>
+		<div className="flex">
+			<div className="flex-1 min-w-0">
+				<p className="font-semibold">
+					{message.senderId === userId ? "You" : "Partner"}
+				</p>
+				<p>{message.body}</p>
+			</div>
+			<div
+				className={`w-3 h-3 rounded-full ${statusColors[message.state as keyof typeof statusColors]}`}
+			/>
+		</div>
+		<div className="flex flex-col">
+			{message.fileAttachments?.map((file: FileUpload) => (
+				<FileInfo key={file.fileName} fileInfo={file} />
+			))}
+		</div>
+	</li>
 );
