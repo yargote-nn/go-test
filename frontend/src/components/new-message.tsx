@@ -29,7 +29,13 @@ import { useCallback, useRef, useState } from "react";
 import { Textarea } from "./ui/textarea";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ACCEPTED_FILE_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+const ACCEPTED_FILE_TYPES = [
+	"image/jpeg",
+	"image/png",
+	"application/pdf",
+	"video/mp4",
+	"audio/mpeg",
+];
 const formSchema = z.object({
 	newMessage: z.string().min(1, {
 		message: "Message is required",

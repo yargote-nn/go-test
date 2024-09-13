@@ -17,6 +17,8 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 	};
 
 	const isImage = fileType.startsWith("image/");
+	const isVideo = fileType.startsWith("video/");
+	const isAudio = fileType.startsWith("audio/");
 
 	return (
 		<div className="p-2 border rounded-lg shadow-sm">
@@ -28,14 +30,14 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 				)}
 				<h2 className="font-semibold">{fileName}</h2>
 			</div>
-			<div className="space-y-2">
+			{/* <div className="space-y-2">
 				<p>
 					<strong>Size:</strong> {formatFileSize(fileSize)}
 				</p>
 				<p>
 					<strong>Type:</strong> {fileType}
 				</p>
-			</div>
+			</div> */}
 			{isImage ? (
 				<div className="mt-4">
 					<img
@@ -44,12 +46,32 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 						className="max-w-full h-auto rounded-lg shadow-md"
 					/>
 				</div>
+			) : isVideo ? (
+				<div className="mt-4">
+					<video
+						src={fileUrl}
+						controls
+						className="max-w-full h-auto rounded-lg shadow-md"
+					>
+						<track kind="captions" />
+					</video>
+				</div>
+			) : isAudio ? (
+				<div className="mt-4">
+					<audio
+						src={fileUrl}
+						controls
+						className="max-w-full h-auto rounded-lg shadow-md"
+					>
+						<track kind="captions" />
+					</audio>
+				</div>
 			) : (
 				<div className="mt-4">
 					<a
 						href={fileUrl}
 						download={fileName}
-						className="inline-flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+						className="inline-flex items-center px-4 py-2 rounded-lg hover:bg-background/20 transition-colors"
 					>
 						<Download className="w-5 h-5 mr-2" />
 						Download File
