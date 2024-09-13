@@ -162,6 +162,8 @@ export function NewMessage({
 
 	function onSubmit(values: FormValues) {
 		sendMessageCallback(values.newMessage, values.files);
+		setFileSelected(false);
+		form.reset();
 	}
 
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
