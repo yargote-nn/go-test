@@ -11,7 +11,7 @@ export const MessageItem = ({
 	userId,
 }: { message: Message; userId: string }) => (
 	<li
-		className={`flex flex-col space-x-4 p-2 hover:bg-primary/35 transition-colors duration-150 ease-in-out rounded-lg mx-auto max-w-md shadow-md gap-2 ${
+		className={`flex flex-col p-2 hover:bg-primary/35 transition-colors duration-150 ease-in-out rounded-lg mx-auto max-w-md shadow-md gap-2 ${
 			message.senderId === userId ? "ml-auto bg-primary/10" : "mr-auto"
 		}`}
 	>
@@ -26,7 +26,7 @@ export const MessageItem = ({
 				className={`w-3 h-3 rounded-full ${statusColors[message.state as keyof typeof statusColors]}`}
 			/>
 		</div>
-		<div className="flex flex-col">
+		<div className="flex flex-col m-0">
 			{message.fileAttachments?.map((file: FileUpload) => (
 				<FileInfo key={file.fileName} fileInfo={file} />
 			))}
