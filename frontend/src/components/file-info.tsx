@@ -1,4 +1,10 @@
-import { Download, FileIcon, FileImage } from "lucide-react";
+import {
+	Download,
+	FileAudio,
+	FileIcon,
+	FileImage,
+	FileVideo,
+} from "lucide-react";
 
 interface FileInfo {
 	fileName: string;
@@ -25,6 +31,10 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 			<div className="flex items-center mb-4">
 				{isImage ? (
 					<FileImage className="size-4 mr-2" />
+				) : isVideo ? (
+					<FileVideo className="size-4 mr-2" />
+				) : isAudio ? (
+					<FileAudio className="size-4 mr-2" />
 				) : (
 					<FileIcon className="size-4 mr-2" />
 				)}
