@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod"
 
 const UserInforSchema = z.object({
 	userId: z.string(),
@@ -6,8 +6,8 @@ const UserInforSchema = z.object({
 	token: z.string(),
 	privateKey: z.string(),
 	publicKey: z.string(),
-});
+})
 
-type UserInfo = z.infer<typeof UserInforSchema>;
+type UserInfo = z.infer<typeof UserInforSchema>
 
-export { UserInforSchema, type UserInfo };
+export { UserInforSchema, type UserInfo }

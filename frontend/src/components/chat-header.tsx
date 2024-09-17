@@ -1,3 +1,3 @@
 export const ChatHeader = ({ nickname }: { nickname: string }) => (
-	<h1 className="text-2xl text-center font-bold mb-4">Chat of {nickname}</h1>
-);
+	<h1 className="mb-4 text-center font-bold text-2xl">Chat of {nickname}</h1>
+)

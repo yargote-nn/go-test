@@ -1,25 +1,25 @@
-"use client";
+"use client"
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { useState } from "react"
 
 export const MessageInput = ({
 	onSendMessage,
 	partnerId,
 	setPartnerId,
 }: {
-	onSendMessage: (message: string) => void;
-	partnerId: string;
-	setPartnerId: (id: string) => void;
+	onSendMessage: (message: string) => void
+	partnerId: string
+	setPartnerId: (id: string) => void
 }) => {
-	const [newMessage, setNewMessage] = useState("");
+	const [newMessage, setNewMessage] = useState("")
 
 	const handleSubmit = (e: React.FormEvent) => {
-		e.preventDefault();
-		onSendMessage(newMessage);
-		setNewMessage("");
-	};
+		e.preventDefault()
+		onSendMessage(newMessage)
+		setNewMessage("")
+	}
 
 	return (
 		<form onSubmit={handleSubmit} className="space-y-2">
@@ -43,5 +43,5 @@ export const MessageInput = ({
 				<Button type="submit">Send</Button>
 			</div>
 		</form>
-	);
-};
+	)
+}

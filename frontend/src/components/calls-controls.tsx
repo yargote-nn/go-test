@@ -1,12 +1,12 @@
-"use client";
+"use client"
 
-import { Button } from "@/components/ui/button";
-import { useCallStore } from "@/stores/calls";
-import type { PartnerInfo } from "@/types";
-import { Mic, Phone, Video, X } from "lucide-react";
+import { Button } from "@/components/ui/button"
+import { useCallStore } from "@/stores/calls"
+import type { PartnerInfo } from "@/types"
+import { Mic, Phone, Video, X } from "lucide-react"
 
 interface CallControlsProps {
-	partnerInfo: PartnerInfo;
+	partnerInfo: PartnerInfo
 }
 
 export function CallControls({ partnerInfo }: CallControlsProps) {
@@ -18,7 +18,7 @@ export function CallControls({ partnerInfo }: CallControlsProps) {
 		declineCall,
 		endCall,
 		toggleMediaType,
-	} = useCallStore();
+	} = useCallStore()
 
 	return (
 		<div className="flex justify-between">
@@ -63,5 +63,5 @@ export function CallControls({ partnerInfo }: CallControlsProps) {
 				</>
 			)}
 		</div>
-	);
+	)
 }

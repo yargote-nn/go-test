@@ -1,15 +1,15 @@
-import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { create } from "zustand"
+import { createJSONStorage, persist } from "zustand/middleware"
 
-import { getApiUrl } from "@/lib/utils";
-import { userToPartner } from "@/mappers/userToPartner";
-import { type PartnerInfo, UserSchema } from "@/types";
+import { getApiUrl } from "@/lib/utils"
+import { userToPartner } from "@/mappers/userToPartner"
+import { type PartnerInfo, UserSchema } from "@/types"
 
 interface ParnterInfoState {
-	partnerInfo: PartnerInfo | null;
-	setPartnerInfo: (partnerInfo: PartnerInfo) => void;
-	updatePartnerInfo: (partnerNickname: string, token: string) => Promise<void>;
-	resetPartnerInfo: () => void;
+	partnerInfo: PartnerInfo | null
+	setPartnerInfo: (partnerInfo: PartnerInfo) => void
+	updatePartnerInfo: (partnerNickname: string, token: string) => Promise<void>
+	resetPartnerInfo: () => void
 }
 
 const usePartnerInfoStore = create(
@@ -25,18 +25,18 @@ const usePartnerInfoStore = create(
 							headers: { Authorization: `Bearer ${token}` },
 							method: "GET",
 						},
-					);
-					const responseData = await response.json();
-					console.log("responseData", responseData);
-					const { data: user, success } = UserSchema.safeParse(responseData);
+					)
+					const responseData = await response.json()
+					console.log("responseData", responseData)
+					const { data: user, success } = UserSchema.safeParse(responseData)
 					if (success) {
-						const partnerInfo = userToPartner(user);
-						set({ partnerInfo });
+						const partnerInfo = userToPartner(user)
+						set({ partnerInfo })
 					} else {
-						set({ partnerInfo: null });
+						set({ partnerInfo: null })
 					}
 				} catch (error) {
-					console.error("Error fetching partner info:", error);
+					console.error("Error fetching partner info:", error)
 				}
 			},
 			resetPartnerInfo: () => set({ partnerInfo: null }),
@@ -46,6 +46,6 @@ const usePartnerInfoStore = create(
 			storage: createJSONStorage(() => sessionStorage),
 		},
 	),
-);
+)
 
-export { usePartnerInfoStore };
+export { usePartnerInfoStore }

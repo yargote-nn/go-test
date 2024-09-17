@@ -1,18 +1,18 @@
-import { FileInfo } from "@/components/file-info";
-import { Input } from "@/components/ui/input";
-import type { FileUploads } from "@/types";
+import { FileInfo } from "@/components/file-info"
+import { Input } from "@/components/ui/input"
+import type { FileUploads } from "@/types"
 
 export const FileUpload = ({
 	onFileUpload,
 	fileUploads,
 }: {
-	onFileUpload: (files: File[]) => void;
-	fileUploads: FileUploads;
+	onFileUpload: (files: File[]) => void
+	fileUploads: FileUploads
 }) => {
 	const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-		const files = Array.from(event.target.files || []);
-		onFileUpload(files);
-	};
+		const files = Array.from(event.target.files || [])
+		onFileUpload(files)
+	}
 
 	return (
 		<>
@@ -31,5 +31,5 @@ export const FileUpload = ({
 				</div>
 			)}
 		</>
-	);
-};
+	)
+}

@@ -4,39 +4,39 @@ import {
 	FileIcon,
 	FileImage,
 	FileVideo,
-} from "lucide-react";
+} from "lucide-react"
 
 interface FileInfo {
-	fileName: string;
-	fileSize: number;
-	fileType: string;
-	fileUrl: string;
+	fileName: string
+	fileSize: number
+	fileType: string
+	fileUrl: string
 }
 
 export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
-	const { fileName, fileSize, fileType, fileUrl } = fileInfo;
+	const { fileName, fileSize, fileType, fileUrl } = fileInfo
 
-	const formatFileSize = (size: number): string => {
-		if (size < 1024) return `${size} B`;
-		if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
-		return `${(size / (1024 * 1024)).toFixed(2)} MB`;
-	};
+	const _formatFileSize = (size: number): string => {
+		if (size < 1024) return `${size} B`
+		if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`
+		return `${(size / (1024 * 1024)).toFixed(2)} MB`
+	}
 
-	const isImage = fileType.startsWith("image/");
-	const isVideo = fileType.startsWith("video/");
-	const isAudio = fileType.startsWith("audio/");
+	const isImage = fileType.startsWith("image/")
+	const isVideo = fileType.startsWith("video/")
+	const isAudio = fileType.startsWith("audio/")
 
 	return (
-		<div className="p-2 border rounded-lg shadow-sm">
-			<div className="flex items-center mb-4">
+		<div className="rounded-lg border p-2 shadow-sm">
+			<div className="mb-4 flex items-center">
 				{isImage ? (
-					<FileImage className="size-4 mr-2" />
+					<FileImage className="mr-2 size-4" />
 				) : isVideo ? (
-					<FileVideo className="size-4 mr-2" />
+					<FileVideo className="mr-2 size-4" />
 				) : isAudio ? (
-					<FileAudio className="size-4 mr-2" />
+					<FileAudio className="mr-2 size-4" />
 				) : (
-					<FileIcon className="size-4 mr-2" />
+					<FileIcon className="mr-2 size-4" />
 				)}
 				<h2 className="font-semibold">{fileName}</h2>
 			</div>
@@ -53,7 +53,7 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 					<img
 						src={fileUrl}
 						alt={fileName}
-						className="max-w-full h-auto rounded-lg shadow-md"
+						className="h-auto max-w-full rounded-lg shadow-md"
 					/>
 				</div>
 			) : isVideo ? (
@@ -61,7 +61,7 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 					<video
 						src={fileUrl}
 						controls
-						className="max-w-full h-auto rounded-lg shadow-md"
+						className="h-auto max-w-full rounded-lg shadow-md"
 					>
 						<track kind="captions" />
 					</video>
@@ -71,7 +71,7 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 					<audio
 						src={fileUrl}
 						controls
-						className="max-w-full h-auto rounded-lg shadow-md"
+						className="h-auto max-w-full rounded-lg shadow-md"
 					>
 						<track kind="captions" />
 					</audio>
@@ -81,13 +81,13 @@ export const FileInfo: React.FC<{ fileInfo: FileInfo }> = ({ fileInfo }) => {
 					<a
 						href={fileUrl}
 						download={fileName}
-						className="inline-flex items-center px-4 py-2 rounded-lg hover:bg-background/20 transition-colors"
+						className="inline-flex items-center rounded-lg px-4 py-2 transition-colors hover:bg-background/20"
 					>
-						<Download className="w-5 h-5 mr-2" />
+						<Download className="mr-2 h-5 w-5" />
 						Download File
 					</a>
 				</div>
 			)}
 		</div>
-	);
-};
+	)
+}

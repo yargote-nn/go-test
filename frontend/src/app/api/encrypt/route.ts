@@ -1,8 +1,8 @@
-import { encryptMessage } from "@/lib/crypto";
+import { encryptMessage } from "@/lib/crypto"
 
 export async function POST(req: Request) {
 	const { message, publicKeyReceiver, publicKeySender, fileUploads } =
-		await req.json();
+		await req.json()
 	try {
 		const {
 			encryptedMessage,
@@ -14,14 +14,14 @@ export async function POST(req: Request) {
 			publicKeyReceiver,
 			publicKeySender,
 			fileUploads,
-		);
+		)
 		return Response.json({
 			encryptedMessage,
 			encryptedAESKeyReceiver,
 			encryptedAESKeySender,
 			encryptedFilesUploads,
-		});
-	} catch (error) {
-		return Response.json({ error: "Error encrypting message" });
+		})
+	} catch (_error) {
+		return Response.json({ error: "Error encrypting message" })
 	}
 }

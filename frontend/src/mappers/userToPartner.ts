@@ -1,11 +1,11 @@
-import type { PartnerInfo, User } from "@/types";
+import type { PartnerInfo, User } from "@/types"
 
 function userToPartner(userInfo: User): PartnerInfo {
 	return {
 		partnerId: userInfo.id.toString(),
 		nickname: userInfo.nickname,
 		publicKey: userInfo.publicKey,
-	};
+	}
 }
 
 function partnerToUser(partnerInfo: PartnerInfo): User {
@@ -13,7 +13,7 @@ function partnerToUser(partnerInfo: PartnerInfo): User {
 		id: Number(partnerInfo.partnerId),
 		nickname: partnerInfo.nickname,
 		publicKey: partnerInfo.publicKey,
-	};
+	}
 }
 
-export { partnerToUser, userToPartner };
+export { partnerToUser, userToPartner }

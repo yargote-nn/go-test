@@ -1,80 +1,80 @@
-"use client";
+"use client"
 
-import { Calls } from "@/components/calls";
-import { Broadcast, BroadcastOff } from "@/components/icons/broadcast";
-import { MessageList } from "@/components/message-list";
-import { NewMessage } from "@/components/new-message";
-import { Input } from "@/components/ui/input";
-import { useMessages } from "@/hooks/use-messages";
-import { usePartnerInfo } from "@/hooks/use-partner-info";
-import { useUserInfo } from "@/hooks/use-user-info";
-import { useWebSocket } from "@/hooks/use-web-socket";
-import { useWSMessages } from "@/hooks/use-ws-messages";
-import { useCallStore } from "@/stores/calls";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Calls } from "@/components/calls"
+import { Broadcast, BroadcastOff } from "@/components/icons/broadcast"
+import { MessageList } from "@/components/message-list"
+import { NewMessage } from "@/components/new-message"
+import { Input } from "@/components/ui/input"
+import { useMessages } from "@/hooks/use-messages"
+import { usePartnerInfo } from "@/hooks/use-partner-info"
+import { useUserInfo } from "@/hooks/use-user-info"
+import { useWebSocket } from "@/hooks/use-web-socket"
+import { useWSMessages } from "@/hooks/use-ws-messages"
+import { useCallStore } from "@/stores/calls"
+import { useRouter } from "next/navigation"
+import { useCallback, useEffect, useState } from "react"
 
 export default function ChatPage() {
-	const router = useRouter();
-	const [partnerNickname, setPartnerNickname] = useState("");
-	const { userInfo, isValidUserInfo } = useUserInfo();
-	const { partnerInfo, updatePartnerInfo, resetPartnerInfo } = usePartnerInfo();
-	const { updateMessages, setMessages } = useMessages();
-	const { handleNewMessage, handleStatusUpdate } = useWSMessages({ userInfo });
+	const router = useRouter()
+	const [partnerNickname, setPartnerNickname] = useState("")
+	const { userInfo, isValidUserInfo } = useUserInfo()
+	const { partnerInfo, updatePartnerInfo, resetPartnerInfo } = usePartnerInfo()
+	const { updateMessages, setMessages } = useMessages()
+	const { handleNewMessage, handleStatusUpdate } = useWSMessages({ userInfo })
 	const { isWebSocketReady, webSocketConnect, sendMessage } = useWebSocket({
 		onNewMessage: handleNewMessage,
 		onStatusUpdate: handleStatusUpdate,
-	});
+	})
 
-	const connectWebSocket = useCallStore((state) => state.connectWebSocket);
-	const isWebRTCSocketReady = useCallStore((state) => state.isWebSocketReady);
+	const connectWebSocket = useCallStore((state) => state.connectWebSocket)
+	const isWebRTCSocketReady = useCallStore((state) => state.isWebSocketReady)
 
 	useEffect(() => {
 		if (!isValidUserInfo()) {
-			router.push("/login");
+			router.push("/login")
 		}
-	}, [isValidUserInfo, router]);
+	}, [isValidUserInfo, router])
 
 	const handleUpdateInfo = useCallback(() => {
 		if (partnerNickname && userInfo?.token) {
-			updatePartnerInfo(partnerNickname, userInfo.token);
+			updatePartnerInfo(partnerNickname, userInfo.token)
 		} else {
-			resetPartnerInfo();
+			resetPartnerInfo()
 		}
-	}, [partnerNickname, userInfo?.token, updatePartnerInfo, resetPartnerInfo]);
+	}, [partnerNickname, userInfo?.token, updatePartnerInfo, resetPartnerInfo])
 
 	const handleUpdateMessages = useCallback(() => {
 		if (partnerInfo && userInfo) {
-			updateMessages(partnerInfo, userInfo);
+			updateMessages(partnerInfo, userInfo)
 		} else {
-			setMessages([]);
+			setMessages([])
 		}
-	}, [partnerInfo, userInfo, updateMessages, setMessages]);
+	}, [partnerInfo, userInfo, updateMessages, setMessages])
 
 	useEffect(() => {
-		handleUpdateMessages();
-	}, [handleUpdateMessages]);
+		handleUpdateMessages()
+	}, [handleUpdateMessages])
 
 	useEffect(() => {
-		handleUpdateInfo();
-	}, [handleUpdateInfo]);
+		handleUpdateInfo()
+	}, [handleUpdateInfo])
 
 	useEffect(() => {
 		if (userInfo?.token) {
-			return webSocketConnect(userInfo.token);
+			return webSocketConnect(userInfo.token)
 		}
-	}, [userInfo?.token, webSocketConnect]);
+	}, [userInfo?.token, webSocketConnect])
 
 	useEffect(() => {
 		if (userInfo?.token) {
-			const newToken = userInfo.token;
-			return connectWebSocket(newToken);
+			const newToken = userInfo.token
+			return connectWebSocket(newToken)
 		}
-	}, [userInfo?.token, connectWebSocket]);
+	}, [userInfo?.token, connectWebSocket])
 
 	return (
-		<div className="flex flex-col h-screen p-4 bg-gray-100 items-center">
-			<header className="flex items-center justify-center mb-4">
+		<div className="flex h-screen flex-col items-center bg-gray-100 p-4">
+			<header className="mb-4 flex items-center justify-center">
 				<span className="text-center">
 					{isWebSocketReady && isWebRTCSocketReady ? (
 						<Broadcast className="size-8" />
@@ -82,7 +82,7 @@ export default function ChatPage() {
 						<BroadcastOff className="size-8" />
 					)}
 				</span>
-				<h1 className="text-2xl font-bold">
+				<h1 className="font-bold text-2xl">
 					Chat of {userInfo?.nickname} with{" "}
 					{partnerInfo?.nickname ?? "no partner"}
 				</h1>
@@ -92,13 +92,13 @@ export default function ChatPage() {
 				placeholder="Partner nickname"
 				value={partnerNickname}
 				onChange={(e) => setPartnerNickname(e.target.value)}
-				className="mb-4 max-w-sm p-2 border text-base text-center"
+				className="mb-4 max-w-sm border p-2 text-center text-base"
 			/>
 			<div className="flex-1 overflow-hidden">
 				<MessageList userId={userInfo?.userId ?? ""} />
 			</div>
 			{userInfo && partnerInfo && (
-				<div className="flex flex-col gap-2 w-full max-w-xl mt-4">
+				<div className="mt-4 flex w-full max-w-xl flex-col gap-2">
 					<Calls partnerInfo={partnerInfo} />
 					<NewMessage
 						userInfo={userInfo}
@@ -108,5 +108,5 @@ export default function ChatPage() {
 				</div>
 			)}
 		</div>
-	);
+	)
 }

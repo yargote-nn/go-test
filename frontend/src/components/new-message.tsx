@@ -1,41 +1,41 @@
-"use client";
+"use client"
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { v4 as uuidv4 } from "uuid";
-import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import { v4 as uuidv4 } from "uuid"
+import { z } from "zod"
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button"
 import {
 	Form,
 	FormControl,
 	FormField,
 	FormItem,
 	FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { useMessages } from "@/hooks/use-messages";
-import { encryptMessage } from "@/lib/crypto";
-import { getApiUrl } from "@/lib/utils";
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { useMessages } from "@/hooks/use-messages"
+import { encryptMessage } from "@/lib/crypto"
+import { getApiUrl } from "@/lib/utils"
 import {
 	type FileUploads,
 	FileUploadsSchema,
 	type Message,
 	type PartnerInfo,
 	type UserInfo,
-} from "@/types";
-import { Paperclip, Send } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
-import { Textarea } from "./ui/textarea";
+} from "@/types"
+import { Paperclip, Send } from "lucide-react"
+import { useCallback, useRef, useState } from "react"
+import { Textarea } from "./ui/textarea"
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_FILE_TYPES = [
 	"image/jpeg",
 	"image/png",
 	"application/pdf",
 	"video/mp4",
 	"audio/mpeg",
-];
+]
 const formSchema = z.object({
 	newMessage: z.string().min(1, {
 		message: "Message is required",
@@ -47,22 +47,22 @@ const formSchema = z.object({
 		})
 		.refine(
 			(files) => {
-				const file = files?.[0];
-				return file ? ACCEPTED_FILE_TYPES.includes(file.type) : true;
+				const file = files?.[0]
+				return file ? ACCEPTED_FILE_TYPES.includes(file.type) : true
 			},
 			{
 				message: "Invalid file type",
 			},
 		)
 		.optional(),
-});
+})
 
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<typeof formSchema>
 
 interface NewMessageProps {
-	userInfo: UserInfo;
-	partnerInfo: PartnerInfo;
-	sendMessage: (message: string) => void;
+	userInfo: UserInfo
+	partnerInfo: PartnerInfo
+	sendMessage: (message: string) => void
 }
 
 export function NewMessage({
@@ -70,30 +70,30 @@ export function NewMessage({
 	partnerInfo,
 	sendMessage,
 }: NewMessageProps) {
-	const { addNewMessage } = useMessages();
-	const [fileSelected, setFileSelected] = useState<boolean | null>(false);
-	const fileInputRef = useRef<HTMLInputElement>(null);
+	const { addNewMessage } = useMessages()
+	const [fileSelected, setFileSelected] = useState<boolean | null>(false)
+	const fileInputRef = useRef<HTMLInputElement>(null)
 
 	const form = useForm<FormValues>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			newMessage: "",
 		},
-	});
+	})
 
 	const sendMessageCallback = useCallback(
 		async (newMessage: string, files: FileList | undefined) => {
-			console.log("sendMessageCallback");
-			const tomorrow = new Date(new Date().getTime() + 24 * 60 * 60 * 1000);
-			const expires = tomorrow.toISOString();
-			console.log("expires", expires);
+			console.log("sendMessageCallback")
+			const tomorrow = new Date(new Date().getTime() + 24 * 60 * 60 * 1000)
+			const expires = tomorrow.toISOString()
+			console.log("expires", expires)
 
-			let filesUploads: FileUploads = [];
-			console.log("files", files);
+			let filesUploads: FileUploads = []
+			console.log("files", files)
 			if (files) {
-				const formData = new FormData();
+				const formData = new FormData()
 				for (const file of files) {
-					formData.append("files", file);
+					formData.append("files", file)
 				}
 
 				try {
@@ -103,16 +103,16 @@ export function NewMessage({
 							Authorization: `Bearer ${userInfo.token}`,
 						},
 						body: formData,
-					});
-					const responseData = await response.json();
-					const { data, success } = FileUploadsSchema.safeParse(responseData);
+					})
+					const responseData = await response.json()
+					const { data, success } = FileUploadsSchema.safeParse(responseData)
 					if (!success) {
-						console.error("Error uploading files:", responseData);
-						return;
+						console.error("Error uploading files:", responseData)
+						return
 					}
-					filesUploads = data;
+					filesUploads = data
 				} catch (error) {
-					console.error("Error uploading files:", error);
+					console.error("Error uploading files:", error)
 				}
 			}
 
@@ -127,8 +127,8 @@ export function NewMessage({
 					partnerInfo.publicKey,
 					userInfo.publicKey,
 					filesUploads,
-				);
-				const messageId = uuidv4();
+				)
+				const messageId = uuidv4()
 				const wsMessage = {
 					type: "message",
 					data: {
@@ -142,9 +142,9 @@ export function NewMessage({
 						fileAttachments: JSON.stringify(encryptedFilesUploads),
 						expiredAt: expires,
 					},
-				};
-				console.log("wsMessage", wsMessage);
-				sendMessage(JSON.stringify(wsMessage));
+				}
+				console.log("wsMessage", wsMessage)
+				sendMessage(JSON.stringify(wsMessage))
 
 				const message: Message = {
 					id: messageId,
@@ -156,40 +156,40 @@ export function NewMessage({
 					aesKeyReceiver: encryptedAESKeyReceiver,
 					aesKeySender: encryptedAESKeySender,
 					fileAttachments: filesUploads,
-				};
-				addNewMessage(message);
-				form.reset();
+				}
+				addNewMessage(message)
+				form.reset()
 			} catch (error) {
-				console.error("Error sending message:", error);
+				console.error("Error sending message:", error)
 			}
 		},
 		[partnerInfo, userInfo, form.reset, sendMessage, addNewMessage],
-	);
+	)
 
 	function onSubmit(values: FormValues) {
-		sendMessageCallback(values.newMessage, values.files);
-		setFileSelected(false);
-		form.reset();
+		sendMessageCallback(values.newMessage, values.files)
+		setFileSelected(false)
+		form.reset()
 	}
 
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const files = e.target.files;
-		form.setValue("files", files as FileList);
-		setFileSelected(files && files.length > 0);
-	};
+		const files = e.target.files
+		form.setValue("files", files as FileList)
+		setFileSelected(files && files.length > 0)
+	}
 
 	const handleKeyDown = (event: React.KeyboardEvent) => {
 		if (event.key === "Enter" && !event.shiftKey) {
-			event.preventDefault();
-			const values = form.getValues();
+			event.preventDefault()
+			const values = form.getValues()
 			if (values) {
-				onSubmit(values);
+				onSubmit(values)
 			}
 		}
-	};
+	}
 
 	return (
-		<div className="fixed bottom-0 left-0 right-0 z-10 p-4 max-w-lg m-auto">
+		<div className="fixed right-0 bottom-0 left-0 z-10 m-auto max-w-lg p-4">
 			<Form {...form}>
 				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
 					<FormField
@@ -203,8 +203,8 @@ export function NewMessage({
 										multiple={true}
 										accept={ACCEPTED_FILE_TYPES.join(",")}
 										onChange={(e) => {
-											onChange(e.target.files);
-											handleFileChange(e);
+											onChange(e.target.files)
+											handleFileChange(e)
 										}}
 										ref={fileInputRef}
 									/>
@@ -234,7 +234,7 @@ export function NewMessage({
 											onKeyDown={handleKeyDown}
 											placeholder="New Message"
 											{...field}
-											className="pl-12 pr-12 py-6"
+											className="py-6 pr-12 pl-12"
 										/>
 										<Button
 											type="submit"
@@ -253,5 +253,5 @@ export function NewMessage({
 				</form>
 			</Form>
 		</div>
-	);
+	)
 }

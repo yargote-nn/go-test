@@ -1,4 +1,4 @@
-type CallStatus = "idle" | "calling" | "incomingCall" | "connected";
-type MediaType = "video" | "audio";
+type CallStatus = "idle" | "calling" | "incomingCall" | "connected"
+type MediaType = "video" | "audio"
 
-export type { CallStatus, MediaType };
+export type { CallStatus, MediaType }

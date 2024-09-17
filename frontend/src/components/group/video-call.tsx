@@ -1,9 +1,9 @@
-"use client";
+"use client"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { useUserInfo } from "@/hooks/use-user-info";
-import { useCallStore } from "@/stores/call";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { useUserInfo } from "@/hooks/use-user-info"
+import { useCallStore } from "@/stores/call"
 import {
 	MessageSquare,
 	Mic,
@@ -12,9 +12,9 @@ import {
 	Users,
 	Video,
 	VideoOff,
-} from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import Peer from "simple-peer";
+} from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import Peer from "simple-peer"
 
 export default function VideoCall() {
 	const {
@@ -26,40 +26,40 @@ export default function VideoCall() {
 		setLocalStream,
 		addPeer,
 		removePeer,
-	} = useCallStore();
-	const [isMuted, setIsMuted] = useState(false);
-	const [isVideoOff, setIsVideoOff] = useState(false);
-	const socketRef = useRef<WebSocket | null>(null);
-	const localVideoRef = useRef<HTMLVideoElement>(null);
-	const peersRef = useRef<{ [key: string]: Peer.Instance }>({});
+	} = useCallStore()
+	const [isMuted, setIsMuted] = useState(false)
+	const [isVideoOff, setIsVideoOff] = useState(false)
+	const socketRef = useRef<WebSocket | null>(null)
+	const localVideoRef = useRef<HTMLVideoElement>(null)
+	const peersRef = useRef<{ [key: string]: Peer.Instance }>({})
 
-	const { userInfo } = useUserInfo();
+	const { userInfo } = useUserInfo()
 
 	useEffect(() => {
 		// Get user media
 		navigator.mediaDevices
 			.getUserMedia({ video: true, audio: true })
 			.then((stream) => {
-				setLocalStream(stream);
-				if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-			});
+				setLocalStream(stream)
+				if (localVideoRef.current) localVideoRef.current.srcObject = stream
+			})
 
 		// Connect to WebSocket
 		socketRef.current = new WebSocket(
 			`ws://localhost:8000/ws/group-call/${roomId}?token=${userInfo?.token}`,
-		);
-		socketRef.current.onopen = () => console.log("WebSocket Connected");
+		)
+		socketRef.current.onopen = () => console.log("WebSocket Connected")
 		socketRef.current.onmessage = (event) =>
-			handleServerMessage(JSON.parse(event.data));
+			handleServerMessage(JSON.parse(event.data))
 		socketRef.current.onclose = (event) =>
-			console.log("Socket is closed", event);
+			console.log("Socket is closed", event)
 
 		return () => {
-			localStream?.getTracks().forEach((track) => track.stop());
-			socketRef.current?.close();
-			Object.values(peersRef.current).forEach((peer) => peer.destroy());
-		};
-	}, [userInfo?.token]);
+			localStream?.getTracks().forEach((track) => track.stop())
+			socketRef.current?.close()
+			Object.values(peersRef.current).forEach((peer) => peer.destroy())
+		}
+	}, [userInfo?.token])
 
 	const handleServerMessage = (message: any) => {
 		switch (message.type) {
@@ -69,29 +69,29 @@ export default function VideoCall() {
 						message.userId,
 						userInfo?.userId ?? "",
 						localStream ?? new MediaStream(),
-					);
-					addPeer(message.userId, peer);
-					peersRef.current[message.userId] = peer;
+					)
+					addPeer(message.userId, peer)
+					peersRef.current[message.userId] = peer
 				}
-				break;
+				break
 			case "user-left":
 				if (peers[message.userId]) {
-					peers[message.userId].destroy();
-					removePeer(message.userId);
-					delete peersRef.current[message.userId];
+					peers[message.userId].destroy()
+					removePeer(message.userId)
+					delete peersRef.current[message.userId]
 				}
-				break;
+				break
 			case "offer":
-				handleReceiveOffer(message);
-				break;
+				handleReceiveOffer(message)
+				break
 			case "answer":
-				handleReceiveAnswer(message);
-				break;
+				handleReceiveAnswer(message)
+				break
 			case "ice-candidate":
-				handleNewICECandidate(message);
-				break;
+				handleNewICECandidate(message)
+				break
 		}
-	};
+	}
 
 	const createPeer = (
 		userToSignal: string,
@@ -102,7 +102,7 @@ export default function VideoCall() {
 			initiator: true,
 			trickle: false,
 			stream,
-		});
+		})
 
 		peer.on("signal", (signal) => {
 			socketRef.current?.send(
@@ -112,18 +112,18 @@ export default function VideoCall() {
 					callerID,
 					signal,
 				}),
-			);
-		});
+			)
+		})
 
-		return peer;
-	};
+		return peer
+	}
 
 	const handleReceiveOffer = (incoming: any) => {
 		const peer = new Peer({
 			initiator: false,
 			trickle: false,
 			stream: localStream ?? new MediaStream(),
-		});
+		})
 
 		peer.on("signal", (signal) => {
 			socketRef.current?.send(
@@ -132,56 +132,56 @@ export default function VideoCall() {
 					callerID: incoming.callerID,
 					signal,
 				}),
-			);
-		});
+			)
+		})
 
-		peer.signal(incoming.signal);
-		addPeer(incoming.callerID, peer);
-		peersRef.current[incoming.callerID] = peer;
-	};
+		peer.signal(incoming.signal)
+		addPeer(incoming.callerID, peer)
+		peersRef.current[incoming.callerID] = peer
+	}
 
 	const handleReceiveAnswer = (message: any) => {
-		const peer = peersRef.current[message.callerID];
-		peer.signal(message.signal);
-	};
+		const peer = peersRef.current[message.callerID]
+		peer.signal(message.signal)
+	}
 
 	const handleNewICECandidate = (incoming: any) => {
-		const peer = peersRef.current[incoming.callerID];
-		peer.signal(incoming.candidate);
-	};
+		const peer = peersRef.current[incoming.callerID]
+		peer.signal(incoming.candidate)
+	}
 
 	const toggleAudio = () => {
 		if (localStream) {
 			localStream.getAudioTracks()[0].enabled =
-				!localStream.getAudioTracks()[0].enabled;
-			setIsMuted(!isMuted);
+				!localStream.getAudioTracks()[0].enabled
+			setIsMuted(!isMuted)
 		}
-	};
+	}
 
 	const toggleVideo = () => {
 		if (localStream) {
 			localStream.getVideoTracks()[0].enabled =
-				!localStream.getVideoTracks()[0].enabled;
-			setIsVideoOff(!isVideoOff);
+				!localStream.getVideoTracks()[0].enabled
+			setIsVideoOff(!isVideoOff)
 		}
-	};
+	}
 
 	const leaveCall = () => {
-		socketRef.current?.send(JSON.stringify({ type: "leave" }));
-		localStream?.getTracks().forEach((track) => track.stop());
-		Object.values(peersRef.current).forEach((peer) => peer.destroy());
-		setRoomId("");
-	};
+		socketRef.current?.send(JSON.stringify({ type: "leave" }))
+		localStream?.getTracks().forEach((track) => track.stop())
+		Object.values(peersRef.current).forEach((peer) => peer.destroy())
+		setRoomId("")
+	}
 
 	return (
-		<div className="flex flex-col h-screen bg-gray-100">
-			<header className="flex items-center justify-between p-4 bg-white shadow-sm">
-				<h1 className="text-xl font-semibold">Meeting: {roomId}</h1>
+		<div className="flex h-screen flex-col bg-gray-100">
+			<header className="flex items-center justify-between bg-white p-4 shadow-sm">
+				<h1 className="font-semibold text-xl">Meeting: {roomId}</h1>
 			</header>
 
 			<div className="flex flex-1 overflow-hidden">
-				<main className="flex-1 p-4 grid grid-cols-2 gap-4">
-					<div className="bg-gray-800 rounded-lg aspect-video flex items-center justify-center">
+				<main className="grid flex-1 grid-cols-2 gap-4 p-4">
+					<div className="flex aspect-video items-center justify-center rounded-lg bg-gray-800">
 						<video
 							ref={localVideoRef}
 							autoPlay
@@ -195,8 +195,8 @@ export default function VideoCall() {
 					))}
 				</main>
 
-				<aside className="w-64 bg-white p-4 overflow-y-auto">
-					<h2 className="font-semibold mb-4">Chat</h2>
+				<aside className="w-64 overflow-y-auto bg-white p-4">
+					<h2 className="mb-4 font-semibold">Chat</h2>
 					<div className="space-y-4">
 						{messages.map((msg, index) => (
 							<div key={index} className="flex items-start space-x-2">
@@ -251,21 +251,21 @@ export default function VideoCall() {
 				</div>
 			</footer>
 		</div>
-	);
+	)
 }
 
 function PeerVideo({ peer }: { peer: Peer.Instance }) {
-	const ref = useRef<HTMLVideoElement>(null);
+	const ref = useRef<HTMLVideoElement>(null)
 
 	useEffect(() => {
 		peer.on("stream", (stream) => {
-			if (ref.current) ref.current.srcObject = stream;
-		});
-	}, [peer]);
+			if (ref.current) ref.current.srcObject = stream
+		})
+	}, [peer])
 
 	return (
 		<video ref={ref} autoPlay playsInline className="rounded-lg">
 			<track kind="captions" />
 		</video>
-	);
+	)
 }

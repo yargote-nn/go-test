@@ -1,36 +1,36 @@
-"use client";
+"use client"
 
-import { Button } from "@/components/ui/button";
-import { useMessagesStore } from "@/stores/messages";
-import { ChevronDownIcon } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
-import { MessageItem } from "./message-item";
-import { ScrollArea } from "./ui/scroll-area";
+import { Button } from "@/components/ui/button"
+import { useMessagesStore } from "@/stores/messages"
+import { ChevronDownIcon } from "lucide-react"
+import { useCallback, useEffect, useRef } from "react"
+import { MessageItem } from "./message-item"
+import { ScrollArea } from "./ui/scroll-area"
 
 interface MessageListProps {
-	userId: string;
+	userId: string
 }
 
 export const MessageList = ({ userId }: MessageListProps) => {
-	const messagesEndRef = useRef<HTMLDivElement>(null);
-	const containerRef = useRef<HTMLDivElement>(null);
-	const messages = useMessagesStore((state) => state.messages);
+	const messagesEndRef = useRef<HTMLDivElement>(null)
+	const containerRef = useRef<HTMLDivElement>(null)
+	const messages = useMessagesStore((state) => state.messages)
 
 	const scrollToBottom = useCallback(() => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, []);
+		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+	}, [])
 
 	useEffect(() => {
-		scrollToBottom();
-	}, [messages, scrollToBottom]);
+		scrollToBottom()
+	}, [messages, scrollToBottom])
 
 	return (
-		<div className="flex flex-col h-full w-full">
+		<div className="flex h-full w-full flex-col">
 			<ScrollArea
-				className="flex-col flex-1 mb-4 p-4 rounded-lg shadow-md relative min-w-lg"
+				className="relative mb-4 min-w-lg flex-1 flex-col rounded-lg p-4 shadow-md"
 				ref={containerRef}
 			>
-				<ul className="divide-y divide-gray-200 space-y-2">
+				<ul className="space-y-2 divide-y divide-gray-200">
 					{messages?.map((message) => (
 						<MessageItem
 							key={`${message.id} - ${message.body}`}
@@ -41,7 +41,7 @@ export const MessageList = ({ userId }: MessageListProps) => {
 				</ul>
 				<div ref={messagesEndRef} />
 			</ScrollArea>
-			<div className="flex justify-center mb-20 z-50">
+			<div className="z-50 mb-20 flex justify-center">
 				<Button
 					className="rounded-full p-2"
 					onClick={scrollToBottom}
@@ -53,5 +53,5 @@ export const MessageList = ({ userId }: MessageListProps) => {
 				</Button>
 			</div>
 		</div>
-	);
-};
+	)
+}

@@ -1,17 +1,17 @@
-import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { create } from "zustand"
+import { createJSONStorage, persist } from "zustand/middleware"
 
-import type { UserInfo } from "@/types";
+import type { UserInfo } from "@/types"
 
 interface UserInfoState {
-	userInfo: UserInfo | null;
+	userInfo: UserInfo | null
 }
 
 type UserInfoActions = {
-	setUserInfo: (userInfo: UserInfo) => void;
-	isValidUserInfo: () => boolean;
-	clearUserInfo: () => void;
-};
+	setUserInfo: (userInfo: UserInfo) => void
+	isValidUserInfo: () => boolean
+	clearUserInfo: () => void
+}
 
 const useUserInfoStore = create(
 	persist<UserInfoState & UserInfoActions>(
@@ -19,13 +19,13 @@ const useUserInfoStore = create(
 			userInfo: null,
 			setUserInfo: (userInfo: UserInfo) => set({ userInfo }),
 			isValidUserInfo: () => {
-				const user = get().userInfo;
-				if (!user) return false;
-				const { userId, nickname, token, privateKey, publicKey } = user;
+				const user = get().userInfo
+				if (!user) return false
+				const { userId, nickname, token, privateKey, publicKey } = user
 				const isValidUserInfo = Boolean(
 					userId && nickname && token && privateKey && publicKey,
-				);
-				return isValidUserInfo;
+				)
+				return isValidUserInfo
 			},
 			clearUserInfo: () => set({ userInfo: null }),
 		}),
@@ -34,6 +34,6 @@ const useUserInfoStore = create(
 			storage: createJSONStorage(() => sessionStorage),
 		},
 	),
-);
+)
 
-export { useUserInfoStore };
+export { useUserInfoStore }

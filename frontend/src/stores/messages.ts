@@ -1,22 +1,22 @@
-import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { create } from "zustand"
+import { createJSONStorage, persist } from "zustand/middleware"
 
-import { decryptMessage } from "@/lib/crypto";
-import { getApiUrl } from "@/lib/utils";
+import { decryptMessage } from "@/lib/crypto"
+import { getApiUrl } from "@/lib/utils"
 import {
 	type Message,
 	type Messages,
 	MessagesSchema,
 	type PartnerInfo,
 	type UserInfo,
-} from "@/types";
+} from "@/types"
 
 interface MessageState {
-	messages: Messages;
-	setMessages: (messages: Messages) => void;
-	updateMessages: (partnerInfo: PartnerInfo, userInfo: UserInfo) => void;
-	addNewMessage: (message: Message) => void;
-	updateMessageState: (messageId: string, newState: string) => void;
+	messages: Messages
+	setMessages: (messages: Messages) => void
+	updateMessages: (partnerInfo: PartnerInfo, userInfo: UserInfo) => void
+	addNewMessage: (message: Message) => void
+	updateMessageState: (messageId: string, newState: string) => void
 }
 
 const useMessagesStore = create(
@@ -42,10 +42,10 @@ const useMessagesStore = create(
 							headers: { Authorization: `Bearer ${userInfo.token}` },
 							method: "GET",
 						},
-					);
-					const responseData = await response.json();
+					)
+					const responseData = await response.json()
 					const { data: messages, success } =
-						MessagesSchema.safeParse(responseData);
+						MessagesSchema.safeParse(responseData)
 					if (success) {
 						const decryptedMessages = await Promise.all(
 							messages.map(async (message) => {
@@ -59,9 +59,9 @@ const useMessagesStore = create(
 											message.aesKeyReceiver,
 											userInfo.privateKey,
 											message.fileAttachments ?? [],
-										);
-									message.body = decryptedMessage;
-									message.fileAttachments = decryptedFileUploads;
+										)
+									message.body = decryptedMessage
+									message.fileAttachments = decryptedFileUploads
 								} else if (
 									message.senderId === userInfo.userId &&
 									message.aesKeySender
@@ -72,17 +72,17 @@ const useMessagesStore = create(
 											message.aesKeySender,
 											userInfo.privateKey,
 											message.fileAttachments ?? [],
-										);
-									message.body = decryptedMessage;
-									message.fileAttachments = decryptedFileUploads;
+										)
+									message.body = decryptedMessage
+									message.fileAttachments = decryptedFileUploads
 								}
-								return message;
+								return message
 							}),
-						);
-						set({ messages: decryptedMessages });
+						)
+						set({ messages: decryptedMessages })
 					}
 				} catch (error) {
-					console.error("Error fetching messages with partner:", error);
+					console.error("Error fetching messages with partner:", error)
 				}
 			},
 		}),
@@ -91,6 +91,6 @@ const useMessagesStore = create(
 			storage: createJSONStorage(() => sessionStorage),
 		},
 	),
-);
+)
 
-export { useMessagesStore };
+export { useMessagesStore }

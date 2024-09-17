@@ -1,29 +1,29 @@
-"use client";
+"use client"
 
-import VideoCall from "@/components/group/video-call";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useCallStore } from "@/stores/call";
-import { useState } from "react";
+import VideoCall from "@/components/group/video-call"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { useCallStore } from "@/stores/call"
+import { useState } from "react"
 
 export default function App() {
-	const [roomInput, setRoomInput] = useState("");
-	const { roomId, setRoomId } = useCallStore();
+	const [roomInput, setRoomInput] = useState("")
+	const { roomId, setRoomId } = useCallStore()
 
 	const joinRoom = () => {
 		if (roomInput) {
-			setRoomId(roomInput);
+			setRoomId(roomInput)
 		}
-	};
+	}
 
 	if (roomId) {
-		return <VideoCall />;
+		return <VideoCall />
 	}
 
 	return (
-		<div className="flex items-center justify-center min-h-screen bg-gray-100">
-			<div className="p-8 bg-white rounded-lg shadow-md">
-				<h1 className="text-2xl font-bold mb-4">Join a Meeting</h1>
+		<div className="flex min-h-screen items-center justify-center">
+			<div className="rounded-lg p-8 shadow-md">
+				<h1 className="mb-4 font-bold text-2xl">Join a Meeting</h1>
 				<Input
 					type="text"
 					placeholder="Enter Room ID"
@@ -34,5 +34,5 @@ export default function App() {
 				<Button onClick={joinRoom}>Join</Button>
 			</div>
 		</div>
-	);
+	)
 }

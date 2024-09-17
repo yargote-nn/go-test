@@ -1,17 +1,17 @@
-import { useCallStore } from "@/stores/calls";
+import { useCallStore } from "@/stores/calls"
 
 export function VideoDisplay() {
-	const { callStatus, localVideoRef, remoteVideoRef } = useCallStore();
+	const { callStatus, localVideoRef, remoteVideoRef } = useCallStore()
 
 	return (
-		<div className="relative w-full aspect-video bg-gray-200 rounded-lg overflow-hidden">
+		<div className="relative aspect-video w-full overflow-hidden rounded-lg bg-gray-200">
 			{callStatus === "connected" && (
 				<>
 					<video
 						ref={remoteVideoRef}
 						autoPlay
 						playsInline
-						className="absolute inset-0 w-full h-full object-cover"
+						className="absolute inset-0 h-full w-full object-cover"
 					>
 						<track kind="captions" />
 					</video>
@@ -20,10 +20,10 @@ export function VideoDisplay() {
 						autoPlay
 						playsInline
 						muted
-						className="absolute bottom-4 right-4 w-1/4 h-1/4 object-cover rounded-lg"
+						className="absolute right-4 bottom-4 h-1/4 w-1/4 rounded-lg object-cover"
 					/>
 				</>
 			)}
 		</div>
-	);
+	)
 }
