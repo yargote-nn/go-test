@@ -58,12 +58,18 @@ export default function GroupCall() {
 		console.log(message)
 		switch (message.type) {
 			case "user-joined":
+				console.log("pass by user joined")
+
 				addPeer(message.userId, true)
 				break
 			case "offer":
+				console.log("pass by offer")
+
 				handleOffer(message.from, message.offer)
 				break
 			case "answer":
+				console.log("pass by answer")
+
 				handleAnswer(message.from, message.answer)
 				break
 			case "ice-candidate":
@@ -89,7 +95,7 @@ export default function GroupCall() {
 	const addPeer = (peerId: string, initiator: boolean) => {
 		if (!localStream) return
 		const peer = new Peer({
-			initiator,
+			initiator: initiator,
 			stream: localStream,
 			trickle: false,
 		})

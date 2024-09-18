@@ -1,6 +1,6 @@
 "use client"
 
-import VideoCall from "@/components/group/video-call"
+import { VideoCall } from "@/components/group/video-call"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useCallStore } from "@/stores/call"
