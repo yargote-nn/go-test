@@ -1,6 +1,5 @@
 "use client"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useUserInfoStore } from "@/stores/user-info"
@@ -19,9 +18,7 @@ interface PeerStreams {
 export default function Calls() {
 	const userInfo = useUserInfoStore((state) => state.userInfo)
 	const [peerStreams, setPeerStreams] = useState<PeerStreams>({})
-	const [localStream, setLocalStream] = useState<MediaStream | null>(null)
 	const [roomId] = useState("default-room")
-	const [error, setError] = useState<string | null>(null)
 	const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({})
 	const localStreamRef = useRef<MediaStream | null>(null)
 	const socketRef = useRef<WebSocket | null>(null)
@@ -53,6 +50,10 @@ export default function Calls() {
 						console.log("Answer: ", message)
 						handleAnswer(message.from, message.answer)
 						break
+					case "user-left":
+						console.log("User left:", message)
+						handleLeft(message.userId)
+						break
 					default:
 						console.log("Unhandled message type:", message.type)
 						break
@@ -60,11 +61,9 @@ export default function Calls() {
 			}
 			newSocket.onerror = (error) => {
 				console.error("WebSocket Error:", error)
-				setError("Error connecting to WebSocket")
 			}
 			newSocket.onclose = (event: CloseEvent) => {
 				console.log("WebSocket closed. Reconnecting in 1 second:", event)
-				setError("WebSocket connection closed. Attempting to reconnect...")
 				setTimeout(() => connectSocket(token), 1000)
 			}
 		},
@@ -88,7 +87,6 @@ export default function Calls() {
 			socketRef.current?.send(JSON.stringify(message))
 		} else {
 			console.error("WebSocket is not open")
-			setError("WebSocket is not open. Unable to send message.")
 		}
 	}, [])
 
@@ -97,7 +95,6 @@ export default function Calls() {
 			console.log("Adding peer:", userId, "Initiator:", initiator)
 			if (!localStreamRef.current) {
 				console.error("Local stream not available")
-				setError("Local stream not available. Unable to add peer.")
 				return
 			}
 			const newPeer = new Peer({
@@ -128,37 +125,60 @@ export default function Calls() {
 		[sendToServer],
 	)
 
-	const handleOffer = useCallback(
-		(userId: string, offer: any) => {
-			console.log("Handling offer from:", userId)
+	const findPeerByUserId = (targetUserId: string) => {
+		const entry = Object.entries(peerConnectionsRef.current).find(([userId]) =>
+			userId.includes(targetUserId),
+		)
+		return entry ? { userId: entry[0], peer: entry[1] } : null
+	}
+
+	const handleOffer = (userId: string, offer: any) => {
+		console.log("Handling offer from:", userId)
+		if (!findPeerByUserId(userId)) {
 			addPeer(userId, false)
 			peerConnectionsRef.current[userId]?.signal(offer)
-		},
-		[addPeer],
-	)
+		}
+	}
 
-	const handleAnswer = useCallback((userId: string, answer: any) => {
+	const handleAnswer = (userId: string, answer: any) => {
 		console.log("Handling answer from:", userId)
 		peerConnectionsRef.current[userId]?.signal(answer)
-	}, [])
+	}
 
-	const joinRoom = useCallback(async () => {
+	const handleLeft = (userId: string) => {
+		console.log("Handling left from:", userId)
+		peerConnectionsRef.current[userId]?.destroy()
+		delete peerConnectionsRef.current[userId]
+
+		setPeerStreams((prev) => {
+			const newPeerStreams = { ...prev }
+			delete newPeerStreams[userId]
+			return newPeerStreams
+		})
+	}
+
+	const onLeave = () => {
+		setPeerStreams({})
+		Object.values(peerConnectionsRef.current).forEach((peer) => peer?.destroy())
+		peerConnectionsRef.current = {}
+		localStreamRef.current?.getTracks().forEach((track) => track.stop())
+		localStreamRef.current = null
+		sendToServer({ type: "leave" })
+	}
+
+	const joinRoom = async () => {
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({
 				audio: true,
 				video: true,
 			})
-			setLocalStream(stream)
 			localStreamRef.current = stream
 			console.log("Local stream obtained:", stream)
 			sendToServer({ type: "join" })
 		} catch (error) {
 			console.error("Error accessing media devices:", error)
-			setError(
-				"Error accessing media devices. Please check your camera and microphone permissions.",
-			)
 		}
-	}, [sendToServer])
+	}
 
 	useEffect(() => {
 		Object.entries(peerStreams).forEach(([peerId, stream]) => {
@@ -170,13 +190,7 @@ export default function Calls() {
 
 	return (
 		<div className="container mx-auto p-4">
-			<h1 className="text-3xl font-bold mb-6">Group Call</h1>
-			{error && (
-				<Alert variant="destructive" className="mb-4">
-					<AlertTitle>Error</AlertTitle>
-					<AlertDescription>{error}</AlertDescription>
-				</Alert>
-			)}
+			<h1 className="mb-6 font-bold text-3xl">Group Call</h1>
 			<Card>
 				<CardHeader>
 					<CardTitle>Video Call</CardTitle>
@@ -186,11 +200,11 @@ export default function Calls() {
 						<Button onClick={joinRoom} className="mb-4">
 							<Video className="mr-2 h-4 w-4" /> Join Room
 						</Button>
-						{localStream && (
+						{localStreamRef.current && (
 							<div className="relative">
 								<video
 									ref={(el) => {
-										if (el) el.srcObject = localStream
+										if (el) el.srcObject = localStreamRef.current
 									}}
 									autoPlay
 									playsInline
@@ -204,11 +218,14 @@ export default function Calls() {
 									<Button size="sm" variant="secondary">
 										<Video className="h-4 w-4" />
 									</Button>
+									<Button size="sm" variant="destructive" onClick={onLeave}>
+										<PhoneOff className="h-4 w-4" />
+									</Button>
 								</div>
 							</div>
 						)}
 					</div>
-					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+					<div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						{Object.entries(peerStreams).map(([peerId]) => (
 							<div key={peerId} className="relative">
 								<video
@@ -222,16 +239,9 @@ export default function Calls() {
 									<track kind="captions" />
 									<track kind="descriptions" />
 								</video>
-								<div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">
+								<div className="absolute top-2 left-2 rounded bg-black bg-opacity-50 px-2 py-1 text-white">
 									{peerId}
 								</div>
-								<Button
-									size="sm"
-									variant="destructive"
-									className="absolute bottom-2 right-2"
-								>
-									<PhoneOff className="h-4 w-4" />
-								</Button>
 							</div>
 						))}
 					</div>
