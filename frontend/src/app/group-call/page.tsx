@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useUserInfoStore } from "@/stores/user-info"
-import { Mic, PhoneOff, Video } from "lucide-react"
+import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Peer from "simple-peer"
 
@@ -23,6 +23,8 @@ export default function Calls() {
 	const localStreamRef = useRef<MediaStream | null>(null)
 	const socketRef = useRef<WebSocket | null>(null)
 	const peerConnectionsRef = useRef<PeerConnections>({})
+	const [isAudioEnabled, setIsAudioEnabled] = useState(true)
+	const [isVideoEnabled, setIsVideoEnabled] = useState(true)
 
 	const connectSocket = useCallback(
 		(token: string) => {
@@ -166,6 +168,26 @@ export default function Calls() {
 		sendToServer({ type: "leave" })
 	}
 
+	const onMic = () => {
+		if (localStreamRef.current) {
+			const audioTrack = localStreamRef.current.getAudioTracks()[0]
+			if (audioTrack) {
+				audioTrack.enabled = !audioTrack.enabled
+				setIsAudioEnabled(audioTrack.enabled)
+			}
+		}
+	}
+
+	const onVideo = () => {
+		if (localStreamRef.current) {
+			const videoTrack = localStreamRef.current.getVideoTracks()[0]
+			if (videoTrack) {
+				videoTrack.enabled = !videoTrack.enabled
+				setIsVideoEnabled(videoTrack.enabled)
+			}
+		}
+	}
+
 	const joinRoom = async () => {
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({
@@ -173,6 +195,8 @@ export default function Calls() {
 				video: true,
 			})
 			localStreamRef.current = stream
+			setIsAudioEnabled(true)
+			setIsVideoEnabled(true)
 			console.log("Local stream obtained:", stream)
 			sendToServer({ type: "join" })
 		} catch (error) {
@@ -212,11 +236,19 @@ export default function Calls() {
 									className="rounded-lg shadow-lg"
 								/>
 								<div className="absolute bottom-2 left-2 flex gap-2">
-									<Button size="sm" variant="secondary">
-										<Mic className="h-4 w-4" />
+									<Button size="sm" variant="secondary" onClick={onMic}>
+										{isAudioEnabled ? (
+											<Mic className="h-4 w-4" />
+										) : (
+											<MicOff className="h-4 w-4" />
+										)}
 									</Button>
-									<Button size="sm" variant="secondary">
-										<Video className="h-4 w-4" />
+									<Button size="sm" variant="secondary" onClick={onVideo}>
+										{isVideoEnabled ? (
+											<Video className="h-4 w-4" />
+										) : (
+											<VideoOff className="h-4 w-4" />
+										)}
 									</Button>
 									<Button size="sm" variant="destructive" onClick={onLeave}>
 										<PhoneOff className="h-4 w-4" />
