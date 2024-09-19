@@ -1,245 +1,242 @@
 "use client"
 
-import { useGroupCallStore } from "@/stores/group-calls"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useUserInfoStore } from "@/stores/user-info"
-import { useEffect, useRef } from "react"
+import { Mic, PhoneOff, Video } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Peer from "simple-peer"
 
-export default function GroupCall() {
-	const socket = useGroupCallStore((state) => state.socket)
-	const peerConnections = useGroupCallStore((state) => state.peerConnections)
-	const localStream = useGroupCallStore((state) => state.localStream)
-	const roomId = useGroupCallStore((state) => state.roomId)
-	const isVideoEnabled = useGroupCallStore((state) => state.isVideoEnabled)
-	const setSocket = useGroupCallStore((state) => state.setSocket)
-	const setPeerConnection = useGroupCallStore(
-		(state) => state.setPeerConnection,
-	)
-	const removePeerConnection = useGroupCallStore(
-		(state) => state.removePeerConnection,
-	)
-	const setLocalStream = useGroupCallStore((state) => state.setLocalStream)
-	const setIsVideoEnabled = useGroupCallStore(
-		(state) => state.setIsVideoEnabled,
-	)
+interface PeerConnections {
+	[key: string]: Peer.Instance | null
+}
 
+interface PeerStreams {
+	[key: string]: MediaStream | null
+}
+
+export default function Calls() {
 	const userInfo = useUserInfoStore((state) => state.userInfo)
+	const [peerStreams, setPeerStreams] = useState<PeerStreams>({})
+	const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+	const [roomId] = useState("default-room")
+	const [error, setError] = useState<string | null>(null)
+	const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({})
+	const localStreamRef = useRef<MediaStream | null>(null)
+	const socketRef = useRef<WebSocket | null>(null)
+	const peerConnectionsRef = useRef<PeerConnections>({})
 
-	const localVideoRef = useRef<HTMLVideoElement>(null)
+	const connectSocket = useCallback(
+		(token: string) => {
+			console.log("Connecting to WebSocket", token)
+			const newSocket = new WebSocket(
+				`ws://127.0.0.1:8000/ws/group-call/${roomId}?token=${token}`,
+			)
+			newSocket.onopen = () => {
+				console.log("WebSocket Connected")
+				socketRef.current = newSocket
+			}
+			newSocket.onmessage = (event: MessageEvent) => {
+				const message = JSON.parse(event.data)
+				console.log("Received message:", message)
+				switch (message.type) {
+					case "user-joined":
+						console.log("Join User: ", message)
+						addPeer(message.userId, true)
+						break
+					case "offer":
+						console.log("Offer: ", message)
+						handleOffer(message.from, message.offer)
+						break
+					case "answer":
+						console.log("Answer: ", message)
+						handleAnswer(message.from, message.answer)
+						break
+					default:
+						console.log("Unhandled message type:", message.type)
+						break
+				}
+			}
+			newSocket.onerror = (error) => {
+				console.error("WebSocket Error:", error)
+				setError("Error connecting to WebSocket")
+			}
+			newSocket.onclose = (event: CloseEvent) => {
+				console.log("WebSocket closed. Reconnecting in 1 second:", event)
+				setError("WebSocket connection closed. Attempting to reconnect...")
+				setTimeout(() => connectSocket(token), 1000)
+			}
+		},
+		[roomId],
+	)
 
 	useEffect(() => {
-		console.log("userInfo", userInfo)
-		connectSocket(userInfo?.token ?? "")
+		if (userInfo?.token) {
+			connectSocket(userInfo.token)
+		}
 		return () => {
-			if (socket) socket.close()
-		}
-	}, [userInfo?.token])
-
-	useEffect(() => {
-		if (localStream && localVideoRef.current) {
-			localVideoRef.current.srcObject = localStream
-		}
-	}, [localStream])
-
-	const connectSocket = (token: string) => {
-		console.log("token", token)
-		const newSocket = new WebSocket(
-			`ws://127.0.0.1:8000/ws/group-call/${roomId}?token=${token}`,
-		)
-		newSocket.onopen = () => console.log("WebSocket Connected")
-		newSocket.onmessage = handleSocketMessage
-		newSocket.onerror = (error) => console.error("Socket Error: ", error)
-		newSocket.onclose = (event) => console.log("Socket is closed", event)
-		setSocket(newSocket)
-	}
-
-	const handleSocketMessage = (event: MessageEvent) => {
-		const message = JSON.parse(event.data)
-		console.log(message)
-		switch (message.type) {
-			case "user-joined":
-				console.log("pass by user joined")
-
-				addPeer(message.userId, true)
-				break
-			case "offer":
-				console.log("pass by offer")
-
-				handleOffer(message.from, message.offer)
-				break
-			case "answer":
-				console.log("pass by answer")
-
-				handleAnswer(message.from, message.answer)
-				break
-			case "ice-candidate":
-				handleIceCandidate(message.from, message.candidate)
-				break
-			case "user-left":
-				removePeer(message.userId)
-				break
-			default:
-				console.log("Unhandled message type: ", message.type)
-		}
-	}
-
-	const sendToServer = (message: any) => {
-		if (socket && socket.readyState === WebSocket.OPEN) {
-			console.log("Sending Message: ", message)
-			socket.send(JSON.stringify(message))
-		} else {
-			console.error("WebSocket is not Open")
-		}
-	}
-
-	const addPeer = (peerId: string, initiator: boolean) => {
-		if (!localStream) return
-		const peer = new Peer({
-			initiator: initiator,
-			stream: localStream,
-			trickle: false,
-		})
-
-		peer.on("signal", (data) => {
-			sendToServer({
-				type: initiator ? "offer" : "answer",
-				to: peerId,
-				[initiator ? "offer" : "answer"]: data,
-			})
-		})
-
-		peer.on("stream", (stream) => {
-			console.log("Received stream from peer:", peerId)
-			setPeerConnection(peerId, { peer, stream })
-
-			// Create a new video element for this peer
-			const video = document.createElement("video")
-			video.srcObject = stream
-			video.id = `peer-${peerId}`
-			video.autoplay = true
-			video.playsInline = true
-			document.getElementById("remote-videos")?.appendChild(video)
-		})
-
-		setPeerConnection(peerId, { peer, stream: null })
-	}
-
-	const handleOffer = (peerId: string, offer: any) => {
-		addPeer(peerId, false)
-		peerConnections[peerId].peer.signal(offer)
-	}
-
-	const handleAnswer = (peerId: string, answer: any) => {
-		peerConnections[peerId].peer.signal(answer)
-	}
-
-	const handleIceCandidate = (peerId: string, candidate: any) => {
-		peerConnections[peerId].peer.signal({ type: "candidate", candidate })
-	}
-
-	const removePeer = (peerId: string) => {
-		if (peerConnections[peerId]) {
-			peerConnections[peerId].peer.destroy()
-			removePeerConnection(peerId)
-
-			// Remove the video element for this peer
-			const videoElement = document.getElementById(`peer-${peerId}`)
-			if (videoElement) {
-				videoElement.remove()
+			if (socketRef.current) {
+				socketRef.current.close()
 			}
 		}
-	}
+	}, [connectSocket, userInfo?.token])
 
-	const joinRoom = async () => {
+	const sendToServer = useCallback((message: any) => {
+		if (socketRef.current && socketRef.current?.readyState === WebSocket.OPEN) {
+			console.log("Sending message:", message)
+			socketRef.current?.send(JSON.stringify(message))
+		} else {
+			console.error("WebSocket is not open")
+			setError("WebSocket is not open. Unable to send message.")
+		}
+	}, [])
+
+	const addPeer = useCallback(
+		(userId: string, initiator: boolean) => {
+			console.log("Adding peer:", userId, "Initiator:", initiator)
+			if (!localStreamRef.current) {
+				console.error("Local stream not available")
+				setError("Local stream not available. Unable to add peer.")
+				return
+			}
+			const newPeer = new Peer({
+				initiator: initiator,
+				stream: localStreamRef.current,
+				trickle: false,
+			})
+			newPeer.on("signal", (data) => {
+				console.log("Sending", initiator ? "offer" : "answer", "to", userId)
+				sendToServer({
+					type: initiator ? "offer" : "answer",
+					to: userId,
+					[initiator ? "offer" : "answer"]: data,
+				})
+			})
+			newPeer.on("stream", (stream) => {
+				console.log("Received stream from", userId, stream)
+				// If exist a peer stream with id with userId, not update it
+				console.log("peerStreams", peerStreams)
+				console.log("stream.id", stream.id)
+				console.log(peerStreams[userId])
+				peerStreams[userId]?.id !== stream.id &&
+					setPeerStreams((prev) => ({ ...prev, [userId]: stream }))
+				// setPeerStreams((prev) => ({ ...prev, [userId]: stream }))
+			})
+			peerConnectionsRef.current[userId] = newPeer
+		},
+		[sendToServer],
+	)
+
+	const handleOffer = useCallback(
+		(userId: string, offer: any) => {
+			console.log("Handling offer from:", userId)
+			addPeer(userId, false)
+			peerConnectionsRef.current[userId]?.signal(offer)
+		},
+		[addPeer],
+	)
+
+	const handleAnswer = useCallback((userId: string, answer: any) => {
+		console.log("Handling answer from:", userId)
+		peerConnectionsRef.current[userId]?.signal(answer)
+	}, [])
+
+	const joinRoom = useCallback(async () => {
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({
 				audio: true,
-				video: isVideoEnabled,
+				video: true,
 			})
 			setLocalStream(stream)
+			localStreamRef.current = stream
+			console.log("Local stream obtained:", stream)
 			sendToServer({ type: "join" })
 		} catch (error) {
 			console.error("Error accessing media devices:", error)
+			setError(
+				"Error accessing media devices. Please check your camera and microphone permissions.",
+			)
 		}
-	}
+	}, [sendToServer])
 
-	const leaveRoom = () => {
-		sendToServer({ type: "leave" })
-		Object.keys(peerConnections).forEach(removePeer)
-		if (localStream) {
-			// biome-ignore lint/complexity/noForEach: <explanation>
-			localStream.getTracks().forEach((track) => track.stop())
-			setLocalStream(null)
-		}
-	}
-
-	const toggleVideo = () => {
-		setIsVideoEnabled(!isVideoEnabled)
-		if (localStream) {
-			const videoTrack = localStream.getVideoTracks()[0]
-			if (videoTrack) {
-				videoTrack.enabled = !isVideoEnabled
+	useEffect(() => {
+		Object.entries(peerStreams).forEach(([peerId, stream]) => {
+			if (videoRefs.current[peerId] && stream) {
+				videoRefs.current[peerId].srcObject = stream
 			}
-		}
-	}
+		})
+	}, [peerStreams])
 
 	return (
-		<div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
-			<h1 className="mb-8 font-bold text-4xl">Group Call</h1>
-			<div className="mb-8 space-x-4">
-				<button
-					type="button"
-					className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"
-					onClick={joinRoom}
-				>
-					Join Room
-				</button>
-				<button
-					type="button"
-					className="rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600"
-					onClick={leaveRoom}
-				>
-					Leave Room
-				</button>
-				<button
-					type="button"
-					className="rounded bg-green-500 px-4 py-2 text-white hover:bg-green-600"
-					onClick={toggleVideo}
-				>
-					Toggle Video
-				</button>
-			</div>
-			<div className="grid grid-cols-2 gap-4">
-				<div className="relative">
-					<video
-						ref={localVideoRef}
-						autoPlay
-						playsInline
-						muted
-						className="h-auto w-full rounded border-4 border-blue-500"
-					/>
-					<span className="absolute bottom-2 left-2 rounded bg-blue-500 px-2 py-1 text-white">
-						You
-					</span>
-				</div>
-				{Object.entries(peerConnections).map(([peerId, { stream }]) => (
-					<div key={peerId} className="relative">
-						<video
-							ref={(el) => {
-								if (el && stream) el.srcObject = stream
-							}}
-							autoPlay
-							playsInline
-							className="h-auto w-full rounded border-4 border-green-500"
-						>
-							<track kind="captions" />
-						</video>
-						<span className="absolute bottom-2 left-2 rounded bg-green-500 px-2 py-1 text-white">
-							Peer {peerId}
-						</span>
+		<div className="container mx-auto p-4">
+			<h1 className="text-3xl font-bold mb-6">Group Call</h1>
+			{error && (
+				<Alert variant="destructive" className="mb-4">
+					<AlertTitle>Error</AlertTitle>
+					<AlertDescription>{error}</AlertDescription>
+				</Alert>
+			)}
+			<Card>
+				<CardHeader>
+					<CardTitle>Video Call</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div className="flex flex-wrap gap-4">
+						<Button onClick={joinRoom} className="mb-4">
+							<Video className="mr-2 h-4 w-4" /> Join Room
+						</Button>
+						{localStream && (
+							<div className="relative">
+								<video
+									ref={(el) => {
+										if (el) el.srcObject = localStream
+									}}
+									autoPlay
+									playsInline
+									muted
+									className="rounded-lg shadow-lg"
+								/>
+								<div className="absolute bottom-2 left-2 flex gap-2">
+									<Button size="sm" variant="secondary">
+										<Mic className="h-4 w-4" />
+									</Button>
+									<Button size="sm" variant="secondary">
+										<Video className="h-4 w-4" />
+									</Button>
+								</div>
+							</div>
+						)}
 					</div>
-				))}
-			</div>
+					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+						{Object.entries(peerStreams).map(([peerId]) => (
+							<div key={peerId} className="relative">
+								<video
+									ref={(el) => {
+										videoRefs.current[peerId] = el
+									}}
+									autoPlay
+									playsInline
+									className="rounded-lg shadow-lg"
+								>
+									<track kind="captions" />
+									<track kind="descriptions" />
+								</video>
+								<div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">
+									{peerId}
+								</div>
+								<Button
+									size="sm"
+									variant="destructive"
+									className="absolute bottom-2 right-2"
+								>
+									<PhoneOff className="h-4 w-4" />
+								</Button>
+							</div>
+						))}
+					</div>
+				</CardContent>
+			</Card>
 		</div>
 	)
 }
