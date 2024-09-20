@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useUserInfoStore } from "@/stores/user-info"
 import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Peer from "simple-peer"
 
@@ -15,14 +16,27 @@ interface PeerStreams {
 	[key: string]: MediaStream | null
 }
 
+const stunTurnConfig = {
+	iceServers: [
+		{ urls: "stun:stun-call.napoleon-chat.com:3478" },
+		{
+			urls: "turn:turn-call.napoleon-chat.com:3478",
+			username: "AfUXBSy",
+			credential: "AhFGyHCwalc",
+		},
+	],
+}
+
 export default function Calls() {
 	const userInfo = useUserInfoStore((state) => state.userInfo)
+	const isValidUserInfo = useUserInfoStore((state) => state.isValidUserInfo)
 	const [peerStreams, setPeerStreams] = useState<PeerStreams>({})
 	const [roomId] = useState("default-room")
 	const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({})
 	const localStreamRef = useRef<MediaStream | null>(null)
 	const socketRef = useRef<WebSocket | null>(null)
 	const peerConnectionsRef = useRef<PeerConnections>({})
+	const router = useRouter()
 	const [isAudioEnabled, setIsAudioEnabled] = useState(true)
 	const [isVideoEnabled, setIsVideoEnabled] = useState(true)
 
@@ -73,6 +87,12 @@ export default function Calls() {
 	)
 
 	useEffect(() => {
+		if (!isValidUserInfo()) {
+			router.push("/login")
+		}
+	}, [isValidUserInfo, router])
+
+	useEffect(() => {
 		if (userInfo?.token) {
 			connectSocket(userInfo.token)
 		}
@@ -103,6 +123,7 @@ export default function Calls() {
 				initiator: initiator,
 				stream: localStreamRef.current,
 				trickle: false,
+				config: stunTurnConfig,
 			})
 			newPeer.on("signal", (data) => {
 				console.log("Sending", initiator ? "offer" : "answer", "to", userId)
