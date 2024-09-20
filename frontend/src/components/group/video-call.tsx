@@ -1,4 +1,5 @@
 import { useUserInfo } from "@/hooks/use-user-info"
+import { getWsUrl } from "@/lib/utils"
 import { useCallStore } from "@/stores/call"
 import { useEffect, useRef, useState } from "react"
 import Peer from "simple-peer"
@@ -140,7 +141,7 @@ export function VideoCall() {
 
 		console.log("Connecting to WebSocket")
 		const ws = new WebSocket(
-			`ws://localhost:8000/ws/group-call/${roomId}?token=${userInfo.token}`,
+			`${getWsUrl()}/ws/group-call/${roomId}?token=${userInfo.token}`,
 		)
 		ws.onopen = () => {
 			console.log("WebSocket Connected")

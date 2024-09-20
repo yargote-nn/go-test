@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getWsUrl } from "@/lib/utils"
 import { useUserInfoStore } from "@/stores/user-info"
 import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -44,7 +45,7 @@ export default function Calls() {
 		(token: string) => {
 			console.log("Connecting to WebSocket", token)
 			const newSocket = new WebSocket(
-				`ws://127.0.0.1:8000/ws/group-call/${roomId}?token=${token}`,
+				`${getWsUrl()}/ws/group-call/${roomId}?token=${token}`,
 			)
 			newSocket.onopen = () => {
 				console.log("WebSocket Connected")
@@ -80,7 +81,7 @@ export default function Calls() {
 			}
 			newSocket.onclose = (event: CloseEvent) => {
 				console.log("WebSocket closed. Reconnecting in 1 second:", event)
-				setTimeout(() => connectSocket(token), 1000)
+				// setTimeout(() => connectSocket(token), 1000)
 			}
 		},
 		[roomId],

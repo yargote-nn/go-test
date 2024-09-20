@@ -12,3 +12,7 @@ export function getApiUrl() {
 export function getServerUrl() {
 	return process.env.NEXT_PUBLIC_SERVER_HOST ?? "http://localhost:8000"
 }
+
+export function getWsUrl() {
+	return process.env.NEXT_PUBLIC_WS_HOST ?? "ws://localhost:8000"
+}

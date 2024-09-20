@@ -1,3 +1,4 @@
+import { getWsUrl } from "@/lib/utils"
 import type { CallStatus, MediaType } from "@/types/calls"
 import Peer from "simple-peer"
 import { create } from "zustand"
@@ -46,7 +47,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
 	setSignal: (signal) => set({ signal }),
 
 	connectWebSocket: (token: string) => {
-		const socket = new WebSocket(`ws://localhost:8000/ws/webrtc?token=${token}`)
+		const socket = new WebSocket(`${getWsUrl()}/ws/webrtc?token=${token}`)
 
 		console.log("Socket:", socket)
 

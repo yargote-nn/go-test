@@ -1,3 +1,4 @@
+import { getWsUrl } from "@/lib/utils"
 import { useCallStore } from "@/stores/call"
 import { useUserInfoStore } from "@/stores/user-info"
 import { useCallback, useEffect, useState } from "react"
@@ -13,7 +14,7 @@ const GroupCall = () => {
 		if (!roomId) return
 
 		const ws = new WebSocket(
-			`ws://localhost:8000/ws/group-call/${roomId}?token=${userInfo?.token}`,
+			`${getWsUrl()}/ws/group-call/${roomId}?token=${userInfo?.token}`,
 		)
 		setSocket(ws)
 

@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useUserInfo } from "@/hooks/use-user-info"
+import { getWsUrl } from "@/lib/utils"
 import { MicIcon, VideoIcon } from "lucide-react"
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import Peer from "simple-peer"
@@ -36,7 +37,7 @@ export default function GroupVideoCall() {
 	const localStreamRef = useRef<MediaStream | null>(null)
 	const peersArrayRef = useRef<PeerData[]>([])
 
-	const wsUrl = `ws://localhost:8000/ws/group-call/${roomId}?token=${userInfo?.token}`
+	const wsUrl = `${getWsUrl()}/ws/group-call/${roomId}?token=${userInfo?.token}`
 	const socket = useWebSocket(wsUrl)
 
 	const createPeer = useCallback(

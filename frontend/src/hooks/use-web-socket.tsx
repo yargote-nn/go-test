@@ -1,3 +1,4 @@
+import { getWsUrl } from "@/lib/utils"
 import {
 	type CommonMessage,
 	type UpdateStateMessage,
@@ -22,7 +23,7 @@ export function useWebSocket({
 
 	const webSocketConnect = useCallback(
 		(token: string) => {
-			const websocket = new WebSocket(`ws://localhost:8000/ws?token=${token}`)
+			const websocket = new WebSocket(`${getWsUrl()}/ws?token=${token}`)
 			console.log("WebSocket:", websocket)
 			wsRef.current = websocket
 
