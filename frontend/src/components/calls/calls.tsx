@@ -25,7 +25,6 @@ const CallsComponent: React.FC = () => {
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background/10 to-foreground/10 p-4">
 			<div className="container mx-auto max-w-6xl">
-				<h1 className="mb-8 text-center font-bold text-4xl">Group Call</h1>
 				<Card className="overflow-hidden rounded-xl shadow-2xl">
 					<CardHeader className="bg-foreground text-background">
 						<CardTitle className="flex items-center justify-between font-bold text-2xl">
@@ -33,7 +32,7 @@ const CallsComponent: React.FC = () => {
 							<Users className="h-6 w-6" />
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="p-6">
+					<CardContent className="flex flex-col items-center gap-4 p-6">
 						<div className="mb-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
 							<Input
 								type="text"
