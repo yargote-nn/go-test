@@ -16,7 +16,7 @@ interface CallState {
 }
 
 export const useCallStore = create<CallState>((set) => ({
-	roomId: null,
+	roomId: "123",
 	localStream: null,
 	peers: {},
 	messages: [],

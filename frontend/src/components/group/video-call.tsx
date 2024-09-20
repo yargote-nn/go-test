@@ -10,9 +10,6 @@ export function VideoCall() {
 
 	const wSocketRef = useRef<WebSocket | null>(null)
 	const peersRef = useRef<{ [key: string]: Peer.Instance }>({})
-	const pendingOffersRef = useRef<{ [key: string]: RTCSessionDescriptionInit }>(
-		{},
-	)
 
 	useEffect(() => {
 		const stream = async () => {
@@ -29,32 +26,37 @@ export function VideoCall() {
 		stream()
 	}, [])
 
-	const createPeer = (
-		userId: string,
-		initiator: boolean,
-		offer?: RTCSessionDescriptionInit,
-	) => {
-		console.log(`Creating peer. Initiator: ${initiator}, UserId: ${userId}`)
+	const createPeer = (userId: string, initiator: boolean) => {
+		console.log(
+			`Creating peer. Initiator: ${initiator}, UserId: ${userId} hola`,
+		)
 		const peer = new Peer({
 			initiator,
 			trickle: false,
 			stream: localStream as MediaStream,
 		})
 
-		let signalSent = false
-
-		peer.on("signal", (signal) => {
-			if (signalSent) return
-			signalSent = true
-
-			console.log(`Signaling ${initiator ? "offer" : "answer"} to ${userId}`)
-			wSocketRef.current?.send(
-				JSON.stringify({
-					type: initiator ? "offer" : "answer",
-					to: userId,
-					[initiator ? "offer" : "answer"]: signal,
-				}),
+		peer.on("signal", (data) => {
+			console.log(
+				`Signaling ${initiator ? "offer" : "answer"} to ${userId} ${JSON.stringify(data.type)}`,
 			)
+			if (data.type === "offer" || data.type === "answer") {
+				wSocketRef.current?.send(
+					JSON.stringify({
+						type: data.type,
+						to: userId,
+						[data.type]: data,
+					}),
+				)
+			} else if (data.type === "candidate") {
+				wSocketRef.current?.send(
+					JSON.stringify({
+						type: "ice-candidate",
+						to: userId,
+						candidate: data.candidate,
+					}),
+				)
+			}
 		})
 
 		peer.on("connect", () => {
@@ -63,13 +65,8 @@ export function VideoCall() {
 
 		peer.on("error", (err) => {
 			console.error(`Peer connection error with ${userId}:`, err)
-			// Attempt to recreate the peer connection
-			setTimeout(() => {
-				console.log(`Attempting to recreate peer connection with ${userId}`)
-				peer.destroy()
-				delete peersRef.current[userId]
-				createPeer(userId, true)
-			}, 1000)
+			peer.destroy()
+			delete peersRef.current[userId]
 		})
 
 		peer.on("stream", (stream) => {
@@ -82,10 +79,6 @@ export function VideoCall() {
 			video.className = "rounded-lg max-w-sm"
 			document.getElementById("remote-videos")?.appendChild(video)
 		})
-
-		if (offer) {
-			peer.signal(offer)
-		}
 
 		return peer
 	}
@@ -103,15 +96,9 @@ export function VideoCall() {
 			case "offer":
 				if (message.from !== userInfo?.userId && localStream) {
 					console.log(`Offer from: ${message.from}`)
-					if (peersRef.current[message.from]) {
-						console.log(
-							`Peer already exists for ${message.from}, storing offer`,
-						)
-						pendingOffersRef.current[message.from] = message.offer
-					} else {
-						const peer = createPeer(message.from, false, message.offer)
-						peersRef.current[message.from] = peer
-					}
+					const peer = createPeer(message.from, false)
+					peer.signal(message.offer)
+					peersRef.current[message.from] = peer
 				}
 				break
 			case "answer":
@@ -119,10 +106,16 @@ export function VideoCall() {
 					console.log(`Answer from: ${message.from}`)
 					const peer = peersRef.current[message.from]
 					if (peer) {
-						console.log(`Updating signal for ${message.from}`)
 						peer.signal(message.answer)
-					} else {
-						console.error(`No peer found for user ${message.from}`)
+					}
+				}
+				break
+			case "ice-candidate":
+				if (message.from !== userInfo?.userId) {
+					console.log(`ICE candidate from: ${message.from}`)
+					const peer = peersRef.current[message.from]
+					if (peer) {
+						peer.signal(message.candidate)
 					}
 				}
 				break
@@ -166,8 +159,8 @@ export function VideoCall() {
 	}, [userInfo?.token, localStream, roomId])
 
 	return (
-		<div className="flex h-screen flex-col bg-gray-100">
-			<header className="flex items-center justify-between bg-white p-4 shadow-sm">
+		<div className="flex h-screen flex-col">
+			<header className="flex items-center justify-between p-4 shadow-sm">
 				<h1 className="font-semibold text-xl">
 					Meeting: {roomId} - {userInfo?.nickname}
 				</h1>
