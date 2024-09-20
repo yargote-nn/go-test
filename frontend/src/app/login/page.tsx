@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/use-toast"
+import { useLogin } from "@/hooks/use-login"
 import { getApiUrl } from "@/lib/utils"
 import { useUserInfoStore } from "@/stores/user-info"
 import type { UserInfo } from "@/types"
@@ -15,6 +16,7 @@ export default function Login() {
 	const router = useRouter()
 	const { toast } = useToast()
 	const setUserInfo = useUserInfoStore((state) => state.setUserInfo)
+	const { login } = useLogin()
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -35,6 +37,7 @@ export default function Login() {
 					publicKey: user.publicKey,
 				}
 				setUserInfo(userInfo)
+				login()
 				toast({
 					title: "Login successful",
 					description: "Welcome back!",

@@ -18,7 +18,7 @@ export function Calls({ partnerInfo }: CallsProps) {
 	const setIsOpen = useCallStore((state) => state.setIsOpen)
 
 	return (
-		<div className="fixed top-4 right-4 z-50">
+		<div className="fixed top-20 right-4 z-50">
 			<Dialog open={isOpen} onOpenChange={setIsOpen}>
 				<DialogTrigger asChild>
 					<Button size="icon" className="h-12 w-12 rounded-full">
