@@ -13,6 +13,7 @@ import { useWebSocket } from "@/hooks/use-web-socket"
 import { useWSMessages } from "@/hooks/use-ws-messages"
 import { useCallStore } from "@/stores/calls"
 import { useMessagesStore } from "@/stores/messages"
+import { WSMessage } from "@/types"
 import { ChevronDownIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -24,7 +25,7 @@ export default function ChatPage() {
 	const [partnerNickname, setPartnerNickname] = useState("")
 	const { userInfo, isValidUserInfo } = useUserInfo()
 	const { partnerInfo, updatePartnerInfo, resetPartnerInfo } = usePartnerInfo()
-	const { updateMessages, setMessages } = useMessages()
+	const { updateMessageState, updateMessages, setMessages } = useMessages()
 	const { handleNewMessage, handleStatusUpdate } = useWSMessages({ userInfo })
 	const { isWebSocketReady, webSocketConnect, sendMessage } = useWebSocket({
 		onNewMessage: handleNewMessage,
@@ -93,17 +94,38 @@ export default function ChatPage() {
 		}
 	}, [userInfo?.token, connectWebSocket])
 
+	useEffect(() => {
+		console.log("messages", messages)
+		for (const message of messages) {
+			if (message.receiverId === userInfo?.userId && message.state === "sent") {
+				const newMessage = message
+				newMessage.state = "received"
+				updateMessageState(message.id, newMessage.state)
+				const wsMessage: WSMessage = {
+					type: "status_update",
+					data: {
+						state: newMessage.state,
+						messageId: newMessage.id,
+						receiverId: newMessage.senderId,
+						senderId: newMessage.receiverId,
+					},
+				}
+				sendMessage(JSON.stringify(wsMessage))
+			}
+		}
+	}, [messages])
+
 	return (
 		<div className="flex flex-col items-center p-4">
 			<header className="mb-4 flex items-center justify-center gap-2">
 				{isWebSocketReady && isWebRTCSocketReady ? (
-					<Broadcast className="size-8" />
+					<Broadcast className="size-6" />
 				) : (
-					<BroadcastOff className="size-8" />
+					<BroadcastOff className="size-6" />
 				)}
-				<h1 className="text-balance font-bold text-2xl">
-					Chat of {userInfo?.nickname} with{" "}
-					{partnerInfo?.nickname ?? "no partner"}
+				<h1 className="text-balance font-semibold text-xl">
+					Chat of ({userInfo?.nickname}) with (
+					{partnerInfo?.nickname ?? "no partner"})
 				</h1>
 			</header>
 			<Input
