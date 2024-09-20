@@ -2,9 +2,10 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { getWsUrl } from "@/lib/utils"
 import { useUserInfoStore } from "@/stores/user-info"
-import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react"
+import { Mic, MicOff, PhoneOff, Users, Video, VideoOff } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Peer from "simple-peer"
@@ -32,7 +33,8 @@ export default function Calls() {
 	const userInfo = useUserInfoStore((state) => state.userInfo)
 	const isValidUserInfo = useUserInfoStore((state) => state.isValidUserInfo)
 	const [peerStreams, setPeerStreams] = useState<PeerStreams>({})
-	const [roomId] = useState("default-room")
+	const [roomId, setRoomId] = useState("default-room")
+	const [isInRoom, setIsInRoom] = useState(false)
 	const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({})
 	const localStreamRef = useRef<MediaStream | null>(null)
 	const socketRef = useRef<WebSocket | null>(null)
@@ -136,13 +138,8 @@ export default function Calls() {
 			})
 			newPeer.on("stream", (stream) => {
 				console.log("Received stream from", userId, stream)
-				// If exist a peer stream with id with userId, not update it
-				console.log("peerStreams", peerStreams)
-				console.log("stream.id", stream.id)
-				console.log(peerStreams[userId])
 				peerStreams[userId]?.id !== stream.id &&
 					setPeerStreams((prev) => ({ ...prev, [userId]: stream }))
-				// setPeerStreams((prev) => ({ ...prev, [userId]: stream }))
 			})
 			peerConnectionsRef.current[userId] = newPeer
 		},
@@ -188,6 +185,7 @@ export default function Calls() {
 		localStreamRef.current?.getTracks().forEach((track) => track.stop())
 		localStreamRef.current = null
 		sendToServer({ type: "leave" })
+		setIsInRoom(false)
 	}
 
 	const onMic = () => {
@@ -221,6 +219,7 @@ export default function Calls() {
 			setIsVideoEnabled(true)
 			console.log("Local stream obtained:", stream)
 			sendToServer({ type: "join" })
+			setIsInRoom(true)
 		} catch (error) {
 			console.error("Error accessing media devices:", error)
 		}
@@ -235,72 +234,108 @@ export default function Calls() {
 	}, [peerStreams])
 
 	return (
-		<div className="container mx-auto p-4">
-			<h1 className="mb-6 font-bold text-3xl">Group Call</h1>
-			<Card>
-				<CardHeader>
-					<CardTitle>Video Call</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<div className="flex flex-wrap gap-4">
-						<Button onClick={joinRoom} className="mb-4">
-							<Video className="mr-2 h-4 w-4" /> Join Room
-						</Button>
-						{localStreamRef.current && (
-							<div className="relative">
-								<video
-									ref={(el) => {
-										if (el) el.srcObject = localStreamRef.current
-									}}
-									autoPlay
-									playsInline
-									muted
-									className="rounded-lg shadow-lg"
-								/>
-								<div className="absolute bottom-2 left-2 flex gap-2">
-									<Button size="sm" variant="secondary" onClick={onMic}>
-										{isAudioEnabled ? (
-											<Mic className="h-4 w-4" />
-										) : (
-											<MicOff className="h-4 w-4" />
-										)}
-									</Button>
-									<Button size="sm" variant="secondary" onClick={onVideo}>
-										{isVideoEnabled ? (
-											<Video className="h-4 w-4" />
-										) : (
-											<VideoOff className="h-4 w-4" />
-										)}
-									</Button>
-									<Button size="sm" variant="destructive" onClick={onLeave}>
-										<PhoneOff className="h-4 w-4" />
-									</Button>
-								</div>
-							</div>
-						)}
-					</div>
-					<div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-						{Object.entries(peerStreams).map(([peerId]) => (
-							<div key={peerId} className="relative">
-								<video
-									ref={(el) => {
-										videoRefs.current[peerId] = el
-									}}
-									autoPlay
-									playsInline
-									className="rounded-lg shadow-lg"
+		<div className="min-h-screen bg-gradient-to-br from-background/10 to-foreground/10 p-4">
+			<div className="container mx-auto max-w-6xl">
+				<h1 className="mb-8 text-center font-bold text-4xl">Group Call</h1>
+				<Card className="overflow-hidden rounded-xl shadow-2xl">
+					<CardHeader className="bg-foreground text-background">
+						<CardTitle className="flex items-center justify-between font-bold text-2xl">
+							<span>Video Call Room</span>
+							<Users className="h-6 w-6" />
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="p-6">
+						<div className="mb-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+							<Input
+								type="text"
+								placeholder="Enter Room ID"
+								value={roomId}
+								onChange={(e) => setRoomId(e.target.value)}
+								className="w-full max-w-xs rounded-full shadow-inner"
+								disabled={isInRoom}
+							/>
+							{!isInRoom && (
+								<Button
+									onClick={joinRoom}
+									className="w-full max-w-xs rounded-full hover:scale-105 hover:transition-all sm:w-auto"
 								>
-									<track kind="captions" />
-									<track kind="descriptions" />
-								</video>
-								<div className="absolute top-2 left-2 rounded bg-black bg-opacity-50 px-2 py-1 text-white">
-									{peerId}
+									<Video className="mr-2 h-4 w-4" /> Join Room
+								</Button>
+							)}
+						</div>
+						<div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+							{localStreamRef.current && (
+								<div className="relative overflow-hidden rounded-lg shadow-lg">
+									<video
+										ref={(el) => {
+											if (el) el.srcObject = localStreamRef.current
+										}}
+										autoPlay
+										playsInline
+										muted
+										className="h-full w-full object-cover"
+									/>
+									<div className="absolute bottom-2 left-2 flex gap-2">
+										<Button
+											size="sm"
+											variant={isAudioEnabled ? "secondary" : "destructive"}
+											onClick={onMic}
+											className="rounded-full"
+										>
+											{isAudioEnabled ? (
+												<Mic className="h-4 w-4" />
+											) : (
+												<MicOff className="h-4 w-4" />
+											)}
+										</Button>
+										<Button
+											size="sm"
+											variant={isVideoEnabled ? "secondary" : "destructive"}
+											onClick={onVideo}
+											className="rounded-full"
+										>
+											{isVideoEnabled ? (
+												<Video className="h-4 w-4" />
+											) : (
+												<VideoOff className="h-4 w-4" />
+											)}
+										</Button>
+										<Button
+											size="sm"
+											variant="destructive"
+											onClick={onLeave}
+											className="rounded-full"
+										>
+											<PhoneOff className="h-4 w-4" />
+										</Button>
+									</div>
 								</div>
-							</div>
-						))}
-					</div>
-				</CardContent>
-			</Card>
+							)}
+							{Object.entries(peerStreams).map(([peerId]) => (
+								<div
+									key={peerId}
+									className="relative overflow-hidden rounded-lg shadow-lg"
+								>
+									<video
+										ref={(el) => {
+											videoRefs.current[peerId] = el
+										}}
+										autoPlay
+										playsInline
+										className="h-full w-full object-cover"
+									>
+										<track kind="captions" />
+										<track kind="descriptions" />
+									</video>
+									<div className="absolute top-2 left-2 rounded-full bg-black bg-opacity-50 px-3 py-1 text-sm text-white">
+										{peerId}
+									</div>
+								</div>
+							))}
+						</div>
+					</CardContent>
+				</Card>
+			</div>
 		</div>
 	)
 }
